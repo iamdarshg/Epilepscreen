@@ -56,6 +56,13 @@ function assert(cond, msg) {
   assert(fns._dimmed() === false, 'not dimmed when safe');
   assert(fns._badgeShown() === false, 'badge hidden when safe');
 
+  // liveDetect mode must not throw and still return a usable handle
+  const v2 = new FakeVideo();
+  v2.readyState = 2;
+  const h2 = window.Epilepscreen.attach(v2, { liveDetect: true });
+  assert(typeof h2.detach === 'function', 'liveDetect attach returns handle');
+  h2.detach();
+
   h1.detach();
   if (failures === 0) console.log('OK: all overlay widget tests passed');
   else { console.error(failures + ' failure(s)'); process.exit(1); }

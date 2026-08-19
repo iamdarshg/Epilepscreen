@@ -11,7 +11,7 @@ import lzma
 DB_CONFIG = {
     'user': 'root',
     'password': 'sql123',
-    'host': '192.168.100.93',
+    'host': 'localhost',
     'database': 'darsh',
     'raise_on_warnings': True,
     # buffer_result is often needed when fetching large BLOBs
