@@ -1,0 +1,6 @@
+Django==5.1.7
+mysql_connector_repackaged==0.3.1
+
+numpy
+opencv-python-headless
+pytest

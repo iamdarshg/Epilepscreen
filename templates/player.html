@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epilepscreen</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js">
+    </script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js">
+    </script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #e0e0e0;
+            --accent: #bb86fc;
+            --danger: #cf6679;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { margin-bottom: 20px; }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        /* Video Container */
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: filter 0.3s ease; /* Smooth dimming transition */
+        }
+
+        /* Safety Overlay Message */
+        .safety-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: var(--accent);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: none;
+            z-index: 10;
+            border: 1px solid var(--accent);
+        }
+
+        .safety-active {
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        /* Upload Form */
+        .upload-section {
+            border-top: 1px solid #333;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+
+        input[type="text"], input[type="file"] {
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #2c2c2c;
+            border: 1px solid #333;
+            color: white;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+
+        button:hover { opacity: 0.9; }
+
+        /* Video List */
+        .video-list {
+            margin-top: 20px;
+            list-style: none;
+            padding: 0;
+        }
+
+        .video-item {
+            background: #2c2c2c;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .video-item:hover { background: #3c3c3c; }
+
+        /* Hidden canvas for processing */
+        #analysisCanvas { display: none; }
+
+        #heading{
+            width: 100%;
+            text-align: center;
+        }
+        
+        #butholder{
+            width: fit-content;
+            padding-left: 20%;
+        }
+
+        #light{
+            align-self: right;
+            width: fit-content;
+            background-color: black;
+        }
+    </style>
+</head>
+<body>
+        <h1 id="heading">Epilepscreen<span id="butholder"><button id="light" class="glyphicon glyphicon-adjust"> </button></span></h1>
+    <div class="container">
+        <h1>SafeView Player</h1>
+
+        <div class="video-wrapper">
+            <div id="safetyBadge" class="safety-indicator">Photosensitive Guard Active</div>
+            <video id="mainPlayer" controls crossorigin="anonymous">
+                <source src="" type="video/mp4" id="videoSource">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+
+        <div class="upload-section">
+            <h3>Upload New Video</h3>
+            <form action="/upload/" method="POST" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="text" name="title" placeholder="Video Title" required>
+                <input type="file" name="video_file" accept="video/*" required>
+                <button type="submit">Upload to Database</button>
+            </form>
+        </div>
+
+        <h3>Library</h3>
+        <ul class="video-list">
+            {% for video in videos %}
+            <li class="video-item" onclick="playVideo('{{ video.file_path }}')">
+                <span>{{ video.title }}</span>
+                <small>{{ video.uploaded_at }}</small>
+                <button onclick="event.stopPropagation(); analyzeVideo('{{ video.file_path }}')">Analyze</button>
+            </li>
+            {% empty %}
+            <li class="video-item">No videos found. Upload one!</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <!-- Hidden canvas for image analysis -->
+    <canvas id="analysisCanvas"></canvas>
+
+    <script src="/static/epilepscreen/epilepscreen.js"></script>
+    <script>
+        const video = document.getElementById('mainPlayer');
+        const canvas = document.getElementById('analysisCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const safetyBadge = document.getElementById('safetyBadge');
+        const source = document.getElementById('videoSource');
+
+        // Configuration for sensitivity
+        const CONFIG = {
+            sampleRate: 20, // Check every 100ms (10fps analysis)
+            flashThreshold: 40, // Difference in brightness to consider a "flash" (0-255)
+            maxFlashCount: 3, // How many flashes in a row trigger dimming
+            dimLevel: 'brightness(40%) sepia(20%)', // CSS filter when protecting
+            normalLevel: 'brightness(100%)',
+            recoverySpeed: 2000 // Time ms to recover after flashing stops
+        };
+
+        let lastBrightness = -1;
+        let flashCounter = 0;
+        let isDimmed = false;
+        let recoveryTimeout = null;
+        let processingInterval = null;
+
+        // Function to change video source dynamically
+        let guard = null;
+        function playVideo(path) {
+            source.src = path;
+            video.load();
+            video.play();
+            const hash = path.split('/').filter(Boolean)[1];
+            if (guard) guard.detach();
+            guard = window.Epilepscreen.attach(video, {
+                eventsUrl: '/events/' + hash + '/',
+                paddingSeconds: 0.2,
+            });
+        }
+
+        async function analyzeVideo(path) {
+            const res = await fetch(path.replace('/stream/', '/analyze/'));
+            const data = await res.json();
+            if (data.error) { alert('Error: ' + data.error); return; }
+            if (data.is_safe) { alert('Safe: no photosensitive triggers detected.'); return; }
+            const summary = data.events
+                .map(e => `${e.start.toFixed(1)}s-${e.end.toFixed(1)}s ${e.kind}`)
+                .join('\n');
+            alert('Risky triggers:\n' + summary);
+        }
+
+        // Main Analysis Loop
+        function startAnalysis() {
+            // Set canvas size small for performance (we don't need HD for brightness check)
+            canvas.width = 64;
+            canvas.height = 64;
+
+            processingInterval = setInterval(() => {
+                if (video.paused || video.ended) return;
+
+                // Draw current video frame to canvas
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get pixel data
+                const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = frame.data;
+                let r, g, b, avg;
+                let colorSum = 0;
+
+                // Calculate average brightness
+                // Loop through pixels (data is [r, g, b, a, r, g, b, a...])
+                // We step by 4 * 10 to sample fewer pixels for performance
+                let pixelCount = 0;
+                for (let i = 0; i < data.length; i += 40) {
+                    r = data[i];
+                    g = data[i+1];
+                    b = data[i+2];
+                    
+                    // Perceived brightness formula
+                    avg = Math.floor(0.299*r + 0.587*g + 0.114*b);
+                    colorSum += avg;
+                    pixelCount++;
+                }
+
+                const currentBrightness = Math.floor(colorSum / pixelCount);
+
+                if (lastBrightness !== -1) {
+                    const diff = Math.abs(currentBrightness - lastBrightness);
+
+                    // Check for rapid flash (strobe effect)
+                    if (diff > CONFIG.flashThreshold) {
+                        flashCounter++;
+                    } else {
+                        // Decay counter slowly
+                        if(flashCounter > 0) flashCounter--;
+                    }
+
+                    // Trigger Protection
+                    if (flashCounter >= CONFIG.maxFlashCount) {
+                        engageProtection();
+                    } 
+                }
+
+                lastBrightness = currentBrightness;
+
+            }, CONFIG.sampleRate);
+        }
+
+        function engageProtection() {
+            if (isDimmed) return; // Already protected
+            
+            isDimmed = true;
+            video.style.filter = CONFIG.dimLevel;
+            safetyBadge.style.display = 'block';
+            safetyBadge.textContent = 'High Contrast/Flash Detected - Dimming';
+            safetyBadge.classList.add('safety-active');
+
+            // Reset recovery timer
+            if (recoveryTimeout) clearTimeout(recoveryTimeout);
+            
+            // Try to recover after X seconds
+            recoveryTimeout = setTimeout(disengageProtection, CONFIG.recoverySpeed);
+        }
+
+        function disengageProtection() {
+            // If we are still flashing, don't recover yet
+            if (flashCounter > 0) {
+                recoveryTimeout = setTimeout(disengageProtection, 1000);
+                return;
+            }
+
+            isDimmed = false;
+            video.style.filter = CONFIG.normalLevel;
+            safetyBadge.style.display = 'none';
+            safetyBadge.classList.remove('safety-active');
+        }
+
+        // Event Listeners
+        video.addEventListener('play', () => {
+            if (!processingInterval) startAnalysis();
+        });
+
+        video.addEventListener('pause', () => {
+            clearInterval(processingInterval);
+            processingInterval = null;
+        });
+
+        video.addEventListener('ended', () => {
+            clearInterval(processingInterval);
+            processingInterval = null;
+            disengageProtection();
+        });
+
+    </script>
+</body>
+</html>
