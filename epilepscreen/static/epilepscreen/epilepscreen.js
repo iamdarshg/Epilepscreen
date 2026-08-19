@@ -15,15 +15,18 @@
   'use strict';
 
   function createOverlay(video) {
-    let overlay = video.parentElement.querySelector('.epilepscreen-overlay');
-    if (overlay) return overlay;
-    overlay = document.createElement('div');
+    const parent = video.parentElement;
+    const overlay = document.createElement('div');
     overlay.className = 'epilepscreen-overlay';
     overlay.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;' +
       'pointer-events:none;z-index:10;display:none;';
-    if (video.parentElement.style) video.parentElement.style.position = 'relative';
-    video.parentElement.appendChild(overlay);
+    if (parent && parent.style) {
+      if (!parent.style.position || parent.style.position === 'static') {
+        parent.style.position = 'relative';
+      }
+      parent.appendChild(overlay);
+    }
     return overlay;
   }
 
@@ -96,17 +99,14 @@
       let events = [];
       let dimmed = false;
 
-      let badge = video.parentElement.querySelector('.epilepscreen-badge');
-      if (!badge) {
-        badge = document.createElement('div');
-        badge.className = 'epilepscreen-badge';
-        badge.style.cssText =
-          'position:absolute;top:8px;right:8px;z-index:11;padding:4px 8px;' +
-          'font:12px sans-serif;background:rgba(0,0,0,0.7);border-radius:4px;display:none;';
-        video.parentElement.appendChild(badge);
-      }
+      const badge = document.createElement('div');
+      badge.className = 'epilepscreen-badge';
+      badge.style.cssText =
+        'position:absolute;top:8px;right:8px;z-index:11;padding:4px 8px;' +
+        'font:12px sans-serif;background:rgba(0,0,0,0.7);border-radius:4px;display:none;';
       badge.textContent = opts.badgeText || 'Photosensitive guard active';
       badge.style.color = opts.badgeColor || '#cf6679';
+      if (video.parentElement) video.parentElement.appendChild(badge);
       const setBadge = function (on) { badge.style.display = on ? 'block' : 'none'; };
 
       const refresh = async function () {
@@ -149,6 +149,8 @@
           if (liveTimer) clearInterval(liveTimer);
           setDimmed(overlay, dimFilter, false);
           setBadge(false);
+          if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+          if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
         },
         _internals: {
           _inHazard: inHazard,
