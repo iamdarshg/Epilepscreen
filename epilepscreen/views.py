@@ -17,6 +17,7 @@ def index(request):
     Note: We do NOT fetch the 'movie' BLOB here to save bandwidth.
     """
     videos = []
+    cnx = None
     try:
         cnx = get_db_connection()
         cursor = cnx.cursor(dictionary=True)
@@ -36,9 +37,11 @@ def index(request):
             })
             
         cursor.close()
-        cnx.close()
     except mysql.connector.Error as err:
         print(f"Database Error: {err}")
+    finally:
+        if cnx:
+            cnx.close()
         
     return render(request, 'player.html', {'videos': videos})
 
@@ -46,6 +49,7 @@ def stream_video(request, video_hash):
     """
     Retrieves the binary BLOB from MySQL and streams it to the client.
     """
+    cnx = None
     try:
         cnx = get_db_connection()
         cursor = cnx.cursor()
@@ -56,17 +60,20 @@ def stream_video(request, video_hash):
         row = cursor.fetchone()
         
         cursor.close()
-        cnx.close()
         
         if row:
             video_data = lzma.decompress(row[0])
-            # Return the binary data with video MIME type
             return HttpResponse(video_data, content_type='video/mp4')
         else:
             raise Http404("Video not found")
             
     except mysql.connector.Error:
         return HttpResponse("Database Error", status=500)
+    except lzma.LZMAError:
+        return HttpResponse("Corrupt video data", status=500)
+    finally:
+        if cnx:
+            cnx.close()
 
 def upload_video(request):
     """
@@ -77,21 +84,18 @@ def upload_video(request):
         title = request.POST.get('title', 'Untitled')
         
         # 1. Read file into memory (binary)
-        # Note: Large files might require chunking or stream reading in production
         movie_blob = video_file.read()
-
 
         # 2. Generate Metadata
         now = datetime.datetime.now()
 
         # Generate UNSIGNED BIGINT hash from title + time
-        # We use SHA256 and convert the first 15 chars to an int to fit in BIGINT
         hash_input = f"{title}{now}".encode('utf-8')
         hash_val = int(hashlib.sha256(hash_input).hexdigest()[:15], 16)
 
-
         movie_blob = lzma.compress(movie_blob)
         # 3. Insert into MySQL
+        cnx = None
         try:
             cnx = get_db_connection()
             cursor = cnx.cursor()
@@ -106,46 +110,34 @@ def upload_video(request):
             cnx.commit()
             
             cursor.close()
-            cnx.close()
         except mysql.connector.Error as err:
             return HttpResponse(f"Database Insert Error: {err}", status=500)
+        finally:
+            if cnx:
+                cnx.close()
 
         return redirect('index')
     
     return redirect('index')
 
-# ---------------------------------------------------------
-# DATABASE SETUP INSTRUCTIONS
-# ---------------------------------------------------------
-# Run this SQL in your MySQL client to match the requested schema:
-#
-# CREATE TABLE videos (
-#     hash BIGINT UNSIGNED PRIMARY KEY,
-#     time_uploaded DATETIME NOT NULL,
-#     title TEXT NOT NULL,
-#     lenjson LONGTEXT,
-#     movie LONGBLOB
-# );
-#
-# IMPORTANT:
-# Storing videos requires a large `max_allowed_packet` in MySQL.
-# You may need to run: SET GLOBAL max_allowed_packet = 1073741824; -- (1GB)
-
 
 def analyze_video(request, video_hash):
     """Analyze a stored video, persist hazard events, and return JSON."""
+    cnx = None
     try:
         cnx = get_db_connection()
         cursor = cnx.cursor()
         cursor.execute("SELECT movie FROM epilepsy WHERE hash = %s", (video_hash,))
         row = cursor.fetchone()
         cursor.close()
-        cnx.close()
         if not row:
             return JsonResponse({"error": "Video not found"}, status=404)
         video_data = lzma.decompress(row[0])
-    except Exception as exc:  # pragma: no cover - DB path
+    except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
+    finally:
+        if cnx:
+            cnx.close()
 
     import tempfile, os
     from photosensitive.analyze_video import analyze_video_file
@@ -175,6 +167,7 @@ def analyze_video(request, video_hash):
 
 def video_events(request, video_hash):
     """Return stored hazard events for a video, for the overlay widget."""
+    cnx = None
     try:
         cnx = get_db_connection()
         cursor = cnx.cursor(dictionary=True)
@@ -185,9 +178,11 @@ def video_events(request, video_hash):
         )
         rows = cursor.fetchall()
         cursor.close()
-        cnx.close()
-    except Exception:  # pragma: no cover - DB path
+    except Exception:
         return JsonResponse({"events": []})
+    finally:
+        if cnx:
+            cnx.close()
     events = [
         {"kind": r["kind"], "start": float(r["start_time"]),
          "end": float(r["end_time"]),
