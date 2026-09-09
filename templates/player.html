@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -192,7 +193,7 @@
     <!-- Hidden canvas for image analysis -->
     <canvas id="analysisCanvas"></canvas>
 
-    <script src="/static/epilepscreen/epilepscreen.js"></script>
+    <script src="{% static 'epilepscreen/epilepscreen.js' %}"></script>
     <script>
         const video = document.getElementById('mainPlayer');
         const canvas = document.getElementById('analysisCanvas');
