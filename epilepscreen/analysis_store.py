@@ -15,6 +15,11 @@ def save_events(video_hash: int, events: list[HazardEvent]) -> int:
     try:
         cnx = get_db_connection()
         cursor = cnx.cursor()
+        # Delete existing events for this video to prevent duplicates
+        cursor.execute(
+            "DELETE FROM hazard_event WHERE video_hash = %s",
+            (video_hash,),
+        )
         now = datetime.datetime.now()
         for e in events:
             cursor.execute(
