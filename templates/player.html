@@ -113,6 +113,70 @@
 
         button:hover { opacity: 0.9; }
 
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #000;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Video loading overlay */
+        .video-loading {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            color: var(--accent);
+            font-size: 14px;
+        }
+        .video-loading .spinner {
+            width: 24px;
+            height: 24px;
+            border-color: var(--accent);
+            border-top-color: transparent;
+            margin-right: 10px;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            z-index: 9999;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: opacity 0.3s, transform 0.3s;
+            max-width: 400px;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast-success { background: #2e7d32; }
+        .toast-error { background: var(--danger); }
+        .toast-info { background: #1565c0; }
+
         /* Video List */
         .video-list {
             margin-top: 20px;
@@ -159,6 +223,9 @@
         <h1>SafeView Player</h1>
 
         <div class="video-wrapper">
+            <div id="videoLoading" class="video-loading" style="display:none;">
+                <div class="spinner"></div>Loading video...
+            </div>
             <div id="safetyBadge" class="safety-indicator">Photosensitive Guard Active</div>
             <video id="mainPlayer" controls crossorigin="anonymous">
                 <source src="" type="video/mp4" id="videoSource">
@@ -168,11 +235,11 @@
 
         <div class="upload-section">
             <h3>Upload New Video</h3>
-            <form action="/upload/" method="POST" enctype="multipart/form-data">
+            <form id="uploadForm" action="/upload/" method="POST" enctype="multipart/form-data">
                 {% csrf_token %}
                 <input type="text" name="title" placeholder="Video Title" required>
                 <input type="file" name="video_file" accept="video/*" required>
-                <button type="submit">Upload to Database</button>
+                <button type="submit" id="uploadBtn">Upload to Database</button>
             </form>
         </div>
 
@@ -219,9 +286,25 @@
 
         // Function to change video source dynamically
         let guard = null;
+        const videoLoading = document.getElementById('videoLoading');
+
+        function showToast(message, type) {
+            type = type || 'info';
+            const t = document.createElement('div');
+            t.className = 'toast toast-' + type;
+            t.textContent = message;
+            document.body.appendChild(t);
+            requestAnimationFrame(function() { t.classList.add('show'); });
+            setTimeout(function() {
+                t.classList.remove('show');
+                setTimeout(function() { t.remove(); }, 300);
+            }, 4000);
+        }
+
         function playVideo(path) {
             source.src = path;
             video.load();
+            videoLoading.style.display = 'flex';
             video.play();
             const hash = path.split('/').filter(Boolean)[1];
             if (guard) guard.detach();
@@ -231,15 +314,31 @@
             });
         }
 
+        video.addEventListener('loadeddata', function() {
+            videoLoading.style.display = 'none';
+        });
+
         async function analyzeVideo(path) {
-            const res = await fetch(path.replace('/stream/', '/analyze/'));
-            const data = await res.json();
-            if (data.error) { alert('Error: ' + data.error); return; }
-            if (data.is_safe) { alert('Safe: no photosensitive triggers detected.'); return; }
-            const summary = data.events
-                .map(e => `${e.start.toFixed(1)}s-${e.end.toFixed(1)}s ${e.kind}`)
-                .join('\n');
-            alert('Risky triggers:\n' + summary);
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Analyzing...';
+            try {
+                const res = await fetch(path.replace('/stream/', '/analyze/'));
+                const data = await res.json();
+                if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
+                if (data.is_safe) { showToast('Safe: no photosensitive triggers detected.', 'success'); return; }
+                const summary = data.events
+                    .map(e => e.start.toFixed(1) + 's-' + e.end.toFixed(1) + 's ' + e.kind)
+                    .join('\n');
+                showToast('Risky triggers found! Check console for details.', 'error');
+                console.log('Hazard events:\n' + summary);
+            } catch (err) {
+                showToast('Analysis failed: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
         }
 
         // Main Analysis Loop
@@ -343,6 +442,13 @@
             clearInterval(processingInterval);
             processingInterval = null;
             disengageProtection();
+        });
+
+        // Upload form loading state
+        document.getElementById('uploadForm').addEventListener('submit', function() {
+            var btn = document.getElementById('uploadBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Uploading...';
         });
 
     </script>
