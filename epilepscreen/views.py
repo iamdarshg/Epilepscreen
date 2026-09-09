@@ -169,6 +169,7 @@ def analyze_video(request, video_hash):
 def video_events(request, video_hash):
     """Return stored hazard events for a video, for the overlay widget."""
     cnx = None
+    rows = []
     try:
         cnx = get_db_connection()
         cursor = cnx.cursor(dictionary=True)
