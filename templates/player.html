@@ -146,7 +146,7 @@
         }
 
         #light{
-            align-self: right;
+            align-self: flex-end;
             width: fit-content;
             background-color: black;
         }
@@ -202,7 +202,7 @@
 
         // Configuration for sensitivity
         const CONFIG = {
-            sampleRate: 20, // Check every 100ms (10fps analysis)
+            sampleRate: 20, // Check every 20ms (50fps analysis)
             flashThreshold: 40, // Difference in brightness to consider a "flash" (0-255)
             maxFlashCount: 3, // How many flashes in a row trigger dimming
             dimLevel: 'brightness(40%) sepia(20%)', // CSS filter when protecting
