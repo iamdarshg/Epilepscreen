@@ -317,6 +317,7 @@
         function disengageProtection() {
             // If we are still flashing, don't recover yet
             if (flashCounter > 0) {
+                if (recoveryTimeout) clearTimeout(recoveryTimeout);
                 recoveryTimeout = setTimeout(disengageProtection, 1000);
                 return;
             }
