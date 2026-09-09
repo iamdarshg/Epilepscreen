@@ -2,6 +2,7 @@ import mysql.connector
 import hashlib
 import datetime
 import json
+import os
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, Http404, JsonResponse
 from django.conf import settings
@@ -89,8 +90,8 @@ def upload_video(request):
         # 2. Generate Metadata
         now = datetime.datetime.now()
 
-        # Generate UNSIGNED BIGINT hash from title + time
-        hash_input = f"{title}{now}".encode('utf-8')
+        # Generate UNSIGNED BIGINT hash from title + time + random bytes
+        hash_input = f"{title}{now}{os.urandom(8)}".encode('utf-8')
         hash_val = int(hashlib.sha256(hash_input).hexdigest()[:15], 16)
 
         movie_blob = lzma.compress(movie_blob)
