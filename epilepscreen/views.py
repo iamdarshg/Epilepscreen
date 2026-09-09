@@ -87,7 +87,11 @@ def upload_video(request):
     if request.method == 'POST' and request.FILES.get('video_file'):
         video_file = request.FILES['video_file']
         title = request.POST.get('title', 'Untitled')
-        
+
+        # Reject files over 100MB to prevent memory exhaustion
+        if video_file.size > 100 * 1024 * 1024:
+            return HttpResponse("File too large (max 100MB)", status=413)
+
         # 1. Read file into memory (binary)
         movie_blob = video_file.read()
 
