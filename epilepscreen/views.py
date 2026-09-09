@@ -3,10 +3,14 @@ import hashlib
 import datetime
 import json
 import os
+import tempfile
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, Http404, JsonResponse
 from django.conf import settings
 import lzma
+
+from photosensitive.analyze_video import analyze_video_file
+from epilepscreen.analysis_store import save_events
 
 
 def get_db_connection():
@@ -140,9 +144,6 @@ def analyze_video(request, video_hash):
         if cnx:
             cnx.close()
 
-    import tempfile, os
-    from photosensitive.analyze_video import analyze_video_file
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
         tmp.write(video_data)
         tmp_path = tmp.name
@@ -151,7 +152,6 @@ def analyze_video(request, video_hash):
     finally:
         os.unlink(tmp_path)
 
-    from epilepscreen.analysis_store import save_events
     save_events(int(video_hash), profile.events)
 
     return JsonResponse({
