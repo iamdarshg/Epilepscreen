@@ -8,14 +8,11 @@ mydb = mysql.connector.connect(
 )
 
 mycursor = mydb.cursor()
-query = """CREATE TABLE epilepsy (
-  hash_id BIGINT UNSIGNED PRIMARY KEY, 
-  time_uploaded DATETIME NOT NULL, 
-  filename TEXT NOT NULL DEFAULT 'README.md', 
-  repo_id INT NOT NULL, 
-  repo_name TEXT NOT NULL, 
-  time_modified DATETIME NOT NULL, 
-  modified_by BIGINT NOT NULL
+query = """CREATE TABLE IF NOT EXISTS epilepsy (
+  hash BIGINT UNSIGNED PRIMARY KEY,
+  time_uploaded DATETIME NOT NULL,
+  title TEXT NOT NULL,
+  movie LONGBLOB
   )
 """
 
@@ -34,10 +31,8 @@ hazard_query = """CREATE TABLE IF NOT EXISTS hazard_event (
 """
 mycursor.execute(hazard_query)
 mydb.commit()
-'''
-TYPING-
-UNSIGNED BIGINT hash // unique ID, hash of title and time uploaded
-DATETIME time_uploaded 
-TEXT title
-LONGBLOB movie // movie being accessed
-'''
+
+mycursor.close()
+mydb.close()
+
+print("Tables created successfully.")
