@@ -4,22 +4,12 @@ import datetime
 import json
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, Http404, JsonResponse
+from django.conf import settings
 import lzma
 
 
-# Configuration for MySQL connection
-DB_CONFIG = {
-    'user': 'root',
-    'password': 'sql123',
-    'host': 'localhost',
-    'database': 'darsh',
-    'raise_on_warnings': True,
-    # buffer_result is often needed when fetching large BLOBs
-    # ensuring the connector doesn't timeout or run OOM easily
-}
-
 def get_db_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    return mysql.connector.connect(**settings.DB_CONFIG)
 
 def index(request):
     """

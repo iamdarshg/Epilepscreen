@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-es45p^(tmcy5sfhh=f2)t9!h8*nd^0#m1vv1+*+sl^9jn-9c5h
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -127,3 +127,12 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# MySQL connection used by epilepscreen views (bypasses Django ORM)
+DB_CONFIG = {
+    'user': os.environ.get('DB_USER', 'root'),
+    'password': os.environ.get('DB_PASSWORD', 'sql123'),
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'database': os.environ.get('DB_NAME', 'darsh'),
+    'raise_on_warnings': True,
+}
