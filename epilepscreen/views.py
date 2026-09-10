@@ -69,7 +69,35 @@ def stream_video(request, video_hash):
         
         if row:
             video_data = lzma.decompress(row[0])
-            return HttpResponse(video_data, content_type='video/mp4')
+            size = len(video_data)
+
+            # Support Range requests so browsers can seek (and play on mobile).
+            range_header = request.headers.get("Range")
+            if range_header and range_header.startswith("bytes="):
+                try:
+                    start_str, _, end_str = range_header[6:].partition("-")
+                    start = int(start_str) if start_str else 0
+                    end = int(end_str) if end_str else size - 1
+                    end = min(end, size - 1)
+                    if start >= size or start > end:
+                        raise ValueError
+                except ValueError:
+                    resp = HttpResponse(status=416)
+                    resp["Content-Range"] = f"bytes */{size}"
+                    return resp
+                resp = HttpResponse(
+                    video_data[start:end + 1],
+                    status=206,
+                    content_type="video/mp4",
+                )
+                resp["Content-Range"] = f"bytes {start}-{end}/{size}"
+                resp["Content-Length"] = str(end - start + 1)
+                resp["Accept-Ranges"] = "bytes"
+                return resp
+
+            resp = HttpResponse(video_data, content_type="video/mp4")
+            resp["Accept-Ranges"] = "bytes"
+            return resp
         else:
             raise Http404("Video not found")
             
