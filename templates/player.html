@@ -190,21 +190,6 @@
             transition: filter 0.3s ease;
         }
 
-        .safety-indicator {
-            position: absolute;
-            top: 10px; right: 10px;
-            background: rgba(0,0,0,0.75);
-            color: var(--danger);
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-family: var(--font-mono);
-            display: none;
-            z-index: 10;
-            border: 1px solid var(--danger);
-            letter-spacing: 0.03em;
-        }
-
         /* Upload Form */
         .upload-section {
             border-top: 1px solid var(--border);
@@ -380,8 +365,6 @@
             text-align: center;
         }
 
-        #analysisCanvas { display: none; }
-
         @media (max-width: 600px) {
             body { padding: 12px 8px 32px; }
             .container { padding: 18px 14px; }
@@ -416,7 +399,6 @@
             <div id="videoLoading" class="video-loading" style="display:none;">
                 <div class="spinner"></div>Loading video...
             </div>
-            <div id="safetyBadge" class="safety-indicator">Photosensitive Guard Active</div>
             <div id="formatTag" class="format-tag">16:9</div>
             <video id="mainPlayer" controls crossorigin="anonymous">
                 <source src="" type="video/mp4" id="videoSource">
@@ -455,32 +437,10 @@
     </div>
     <footer class="foot">Uploads are scanned for strobe, red-flash and pattern triggers. Embed any video on your own site with the Embed button.</footer>
 
-    <!-- Hidden canvas for image analysis -->
-    <canvas id="analysisCanvas"></canvas>
-
     <script src="{% static 'epilepscreen/epilepscreen.js' %}"></script>
     <script>
         const video = document.getElementById('mainPlayer');
-        const canvas = document.getElementById('analysisCanvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const safetyBadge = document.getElementById('safetyBadge');
         const source = document.getElementById('videoSource');
-
-        // Configuration for sensitivity
-        const CONFIG = {
-            sampleRate: 20, // Check every 20ms (50fps analysis)
-            flashThreshold: 40, // Difference in brightness to consider a "flash" (0-255)
-            maxFlashCount: 3, // How many flashes in a row trigger dimming
-            dimLevel: 'brightness(40%) sepia(20%)', // CSS filter when protecting
-            normalLevel: 'brightness(100%)',
-            recoverySpeed: 2000 // Time ms to recover after flashing stops
-        };
-
-        let lastBrightness = -1;
-        let flashCounter = 0;
-        let isDimmed = false;
-        let recoveryTimeout = null;
-        let processingInterval = null;
 
         // Function to change video source dynamically
         let guard = null;
@@ -583,107 +543,6 @@
                 showToast('Copy this snippet: ' + snippet, 'info');
             }
         }
-
-        // Main Analysis Loop
-        function startAnalysis() {
-            // Set canvas size small for performance (we don't need HD for brightness check)
-            canvas.width = 64;
-            canvas.height = 64;
-
-            processingInterval = setInterval(() => {
-                if (video.paused || video.ended) return;
-
-                // Draw current video frame to canvas
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                
-                // Get pixel data
-                const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = frame.data;
-                let r, g, b, avg;
-                let colorSum = 0;
-
-                // Calculate average brightness
-                // Loop through pixels (data is [r, g, b, a, r, g, b, a...])
-                // We step by 4 * 10 to sample fewer pixels for performance
-                let pixelCount = 0;
-                for (let i = 0; i < data.length; i += 40) {
-                    r = data[i];
-                    g = data[i+1];
-                    b = data[i+2];
-                    
-                    // Perceived brightness formula
-                    avg = Math.floor(0.299*r + 0.587*g + 0.114*b);
-                    colorSum += avg;
-                    pixelCount++;
-                }
-
-                const currentBrightness = Math.floor(colorSum / pixelCount);
-
-                if (lastBrightness !== -1) {
-                    const diff = Math.abs(currentBrightness - lastBrightness);
-
-                    // Check for rapid flash (strobe effect)
-                    if (diff > CONFIG.flashThreshold) {
-                        flashCounter++;
-                    } else {
-                        // Decay counter slowly
-                        if(flashCounter > 0) flashCounter--;
-                    }
-
-                    // Trigger Protection
-                    if (flashCounter >= CONFIG.maxFlashCount) {
-                        engageProtection();
-                    } 
-                }
-
-                lastBrightness = currentBrightness;
-
-            }, CONFIG.sampleRate);
-        }
-
-        function engageProtection() {
-            if (isDimmed) return; // Already protected
-            
-            isDimmed = true;
-            video.style.filter = CONFIG.dimLevel;
-            safetyBadge.style.display = 'block';
-            safetyBadge.textContent = 'High Contrast/Flash Detected - Dimming';
-
-            // Reset recovery timer
-            if (recoveryTimeout) clearTimeout(recoveryTimeout);
-            
-            // Try to recover after X seconds
-            recoveryTimeout = setTimeout(disengageProtection, CONFIG.recoverySpeed);
-        }
-
-        function disengageProtection() {
-            // If we are still flashing, don't recover yet
-            if (flashCounter > 0) {
-                if (recoveryTimeout) clearTimeout(recoveryTimeout);
-                recoveryTimeout = setTimeout(disengageProtection, 1000);
-                return;
-            }
-
-            isDimmed = false;
-            video.style.filter = CONFIG.normalLevel;
-            safetyBadge.style.display = 'none';
-        }
-
-        // Event Listeners
-        video.addEventListener('play', () => {
-            if (!processingInterval) startAnalysis();
-        });
-
-        video.addEventListener('pause', () => {
-            clearInterval(processingInterval);
-            processingInterval = null;
-        });
-
-        video.addEventListener('ended', () => {
-            clearInterval(processingInterval);
-            processingInterval = null;
-            disengageProtection();
-        });
 
         // Upload form loading state
         document.getElementById('uploadForm').addEventListener('submit', function() {
