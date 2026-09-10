@@ -7,6 +7,7 @@ import tempfile
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, Http404, JsonResponse
 from django.conf import settings
+from django.views.decorators.clickjacking import xframe_options_exempt
 import lzma
 
 from photosensitive.analyze_video import analyze_video_file
@@ -196,3 +197,37 @@ def video_events(request, video_hash):
         for r in rows
     ]
     return JsonResponse({"events": events})
+
+
+@xframe_options_exempt
+def embed(request, video_hash):
+    """Minimal embeddable player widget for any webpage.
+
+    Usage: <iframe src="/embed/<hash>/" width="560" height="315"
+                   frameborder="0" allowfullscreen></iframe>
+    """
+    cnx = None
+    try:
+        cnx = get_db_connection()
+        cursor = cnx.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT title FROM epilepsy WHERE hash = %s",
+            (video_hash,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        if not row:
+            raise Http404("Video not found")
+        title = row["title"]
+    except Http404:
+        raise
+    except Exception:
+        return HttpResponse("Video unavailable", status=500)
+    finally:
+        if cnx:
+            cnx.close()
+    return render(request, "embed.html", {
+        "title": title,
+        "stream_url": f"/stream/{video_hash}/",
+        "events_url": f"/events/{video_hash}/",
+    })

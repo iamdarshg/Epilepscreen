@@ -359,6 +359,7 @@
                 <span>{{ video.title }}</span>
                 <small>{{ video.uploaded_at }}</small>
                 <button onclick="event.stopPropagation(); analyzeVideo('{{ video.file_path }}')">Analyze</button>
+                <button onclick="event.stopPropagation(); copyEmbed('{{ video.file_path }}')">Embed</button>
             </li>
             {% empty %}
             <li class="empty-msg">No videos found. Upload one above.</li>
@@ -457,6 +458,20 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
+            }
+        }
+
+        function copyEmbed(path) {
+            var hash = path.split('/').filter(Boolean)[1];
+            var snippet = '<iframe src="' + location.origin + '/embed/' + hash + '/" '
+                + 'width="560" height="315" frameborder="0" allowfullscreen></iframe>';
+            function done() { showToast('Embed code copied to clipboard.', 'success'); }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(snippet).then(done, function() {
+                    showToast('Copy failed. Snippet: ' + snippet, 'error');
+                });
+            } else {
+                showToast('Copy this snippet: ' + snippet, 'info');
             }
         }
 
