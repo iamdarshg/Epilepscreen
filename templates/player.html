@@ -24,6 +24,25 @@
             --font-mono: 'JetBrains Mono', monospace;
         }
 
+        /* Light theme (header toggle). All ratios re-checked at 4.5:1+. */
+        body.light {
+            --bg-deep: #eef0f3;
+            --bg-card: #ffffff;
+            --bg-input: #e9ebef;
+            --text-primary: #16161c;
+            --text-muted: #5a5a68;
+            --accent: #007a55;
+            --accent-dim: rgba(0, 122, 85, 0.12);
+            --danger: #c21030;
+            --danger-dim: rgba(194, 16, 48, 0.10);
+            --border: #d5d5dc;
+            background-image:
+                radial-gradient(ellipse 600px 400px at 20% 10%, rgba(0,122,85,0.06), transparent),
+                radial-gradient(ellipse 500px 300px at 80% 80%, rgba(194,16,48,0.05), transparent);
+        }
+        body.light button { color: #fff; }
+        body.light .video-item button { color: var(--text-muted); }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         .sr-only {
@@ -529,6 +548,21 @@
     <script>
         const video = document.getElementById('mainPlayer');
         const source = document.getElementById('videoSource');
+
+        // Theme toggle (the header button). A stored choice wins,
+        // otherwise the OS light/dark preference decides.
+        (function initTheme() {
+            try {
+                var stored = localStorage.getItem('epilepscreen-theme');
+                var light = stored ? stored === 'light'
+                    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+                if (light) document.body.classList.add('light');
+            } catch (e) {}
+        })();
+        document.getElementById('light').addEventListener('click', function() {
+            var on = document.body.classList.toggle('light');
+            try { localStorage.setItem('epilepscreen-theme', on ? 'light' : 'dark'); } catch (e) {}
+        });
 
         // Function to change video source dynamically
         let guard = null;

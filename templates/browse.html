@@ -23,6 +23,23 @@
             --font-mono: 'JetBrains Mono', monospace;
         }
 
+        /* Light theme, kept in sync with the player tab. */
+        body.light {
+            --bg-deep: #eef0f3;
+            --bg-card: #ffffff;
+            --bg-input: #e9ebef;
+            --text-primary: #16161c;
+            --text-muted: #5a5a68;
+            --accent: #007a55;
+            --accent-dim: rgba(0, 122, 85, 0.12);
+            --danger: #c21030;
+            --border: #d5d5dc;
+            background-image:
+                radial-gradient(ellipse 600px 400px at 20% 10%, rgba(0,122,85,0.06), transparent),
+                radial-gradient(ellipse 500px 300px at 80% 80%, rgba(194,16,48,0.05), transparent);
+        }
+        body.light button, body.light .card a.play { color: #fff; }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         .sr-only {
@@ -270,5 +287,14 @@
         </ul>
     </div>
     <footer class="foot">Search and filter are plain SQL LIKE queries over the uploads table.</footer>
+    <script>
+        // Follow the theme chosen on the player tab (toggle lives there).
+        try {
+            var t = localStorage.getItem('epilepscreen-theme');
+            var light = t ? t === 'light'
+                : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+            if (light) document.body.classList.add('light');
+        } catch (e) {}
+    </script>
 </body>
 </html>
