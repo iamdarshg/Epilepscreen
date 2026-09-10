@@ -1,7 +1,11 @@
 /* Epilepscreen reusable overlay widget. No dependencies, single file.
  *
- * Drop this script onto any page with a <video>, then:
+ * Manual mode - drop this script onto any page with a <video>, then:
  *   window.Epilepscreen.attach(video, { eventsUrl: '/events/123/' });
+ *
+ * Auto mode - include it with a `data-auto` attribute and it guards every
+ * <video> on the page by itself, no further code needed:
+ *   <script src="https://your-host/static/epilepscreen/epilepscreen.js" data-auto></script>
  *
  * It dims a transparent overlay over the video while a photosensitive trigger
  * is active. Triggers come from either:
@@ -161,4 +165,64 @@
       };
     },
   };
+
+  /* Auto-embed: when the script tag carries `data-auto`, guard every <video>
+   * on the page with live detection - including videos inside open shadow
+   * roots and videos added later by scripts. Never throws, never breaks the
+   * host page. Fully guarded so the Node test harness (bare document stub)
+   * is unaffected: without `document.currentScript` it simply does nothing.
+   */
+  (function autoEmbed() {
+    try {
+      if (typeof document === 'undefined' || typeof window === 'undefined') return;
+      var tag = document.currentScript;
+      if (!tag || !tag.hasAttribute || !tag.hasAttribute('data-auto')) return;
+
+      var seenList = [];
+      var seenSet = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
+      function remembered(v) {
+        return seenSet ? seenSet.has(v) : seenList.indexOf(v) !== -1;
+      }
+      function remember(v) {
+        if (seenSet) seenSet.add(v);
+        else seenList.push(v);
+      }
+
+      function collectVideos(root, out) {
+        out = out || [];
+        if (!root || !root.querySelectorAll) return out;
+        var found = root.querySelectorAll('video');
+        for (var i = 0; i < found.length; i++) out.push(found[i]);
+        var all = root.querySelectorAll('*');
+        for (var j = 0; j < all.length; j++) {
+          if (all[j].shadowRoot) collectVideos(all[j].shadowRoot, out);
+        }
+        return out;
+      }
+
+      function scan() {
+        var videos = collectVideos(document);
+        for (var i = 0; i < videos.length; i++) {
+          var v = videos[i];
+          if (remembered(v)) continue;
+          remember(v);
+          try {
+            window.Epilepscreen.attach(v, { liveDetect: true, paddingSeconds: 0.2 });
+          } catch (e) { /* never break the host page */ }
+        }
+      }
+
+      if (document.readyState === 'loading' && document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', scan);
+      } else {
+        scan();
+      }
+      if (typeof MutationObserver !== 'undefined' && document.documentElement) {
+        new MutationObserver(function () { scan(); }).observe(
+          document.documentElement, { childList: true, subtree: true });
+      } else {
+        setInterval(scan, 2500);
+      }
+    } catch (e) { /* auto mode must never throw */ }
+  })();
 })();
