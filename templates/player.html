@@ -42,15 +42,32 @@
 
         h1, h2, h3 { font-weight: 700; letter-spacing: -0.02em; }
 
-        #heading {
-            font-size: 1.4rem;
+        #brand {
             width: 100%;
-            max-width: 840px;
+            max-width: 1080px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 12px;
             margin-bottom: 24px;
         }
+
+        .brand-mark {
+            width: 14px; height: 14px;
+            background: var(--accent);
+            transform: rotate(45deg);
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        #brand h1 { font-size: 1.4rem; }
+        #brand p {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            margin-top: 2px;
+        }
+
+        .brand-text { flex: 1; }
 
         #light {
             background: var(--bg-input);
@@ -67,12 +84,51 @@
 
         .container {
             width: 100%;
-            max-width: 840px;
+            max-width: 1080px;
             background: var(--bg-card);
             border: 1px solid var(--border);
             padding: 28px;
             border-radius: var(--radius);
             animation: fadeUp 0.4s ease-out;
+        }
+
+        .hazard-bar {
+            height: 8px;
+            margin: -28px -28px 22px;
+            border-radius: 10px 10px 0 0;
+            background: repeating-linear-gradient(-45deg, var(--accent) 0 10px, transparent 10px 20px);
+            opacity: 0.6;
+        }
+
+        .layout {
+            display: flex;
+            gap: 28px;
+            align-items: flex-start;
+        }
+
+        .stage { flex: 1.55; min-width: 0; }
+        .side { flex: 1; min-width: 0; }
+
+        .side .upload-section {
+            border-top: none;
+            margin-top: 0;
+            padding-top: 0;
+        }
+
+        .stage-note {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .foot {
+            width: 100%;
+            max-width: 1080px;
+            margin-top: 20px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            text-align: center;
         }
 
         @keyframes fadeUp {
@@ -317,17 +373,31 @@
         @media (max-width: 600px) {
             body { padding: 12px 8px 32px; }
             .container { padding: 18px 14px; }
-            #heading { font-size: 1.1rem; }
+            #brand h1 { font-size: 1.1rem; }
             .video-item { flex-wrap: wrap; gap: 6px; }
+            .hazard-bar { margin: -18px -14px 18px; }
+        }
+
+        @media (max-width: 820px) {
+            .layout { flex-direction: column; }
+            .stage, .side { width: 100%; }
+            .side .upload-section { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 20px; }
         }
     </style>
 </head>
 <body>
-    <h1 id="heading">
-        epilepscreen
+    <header id="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-text">
+            <h1>epilepscreen</h1>
+            <p>photosensitive-safe video, anywhere</p>
+        </div>
         <button id="light">&#9681;</button>
-    </h1>
+    </header>
     <div class="container">
+        <div class="hazard-bar"></div>
+        <div class="layout">
+        <div class="stage">
         <h2>SafeView Player</h2>
 
         <div class="video-wrapper">
@@ -341,7 +411,10 @@
                 Your browser does not support the video tag.
             </video>
         </div>
+        <p class="stage-note">Pick a video from the library. Hazard moments are dimmed automatically while it plays.</p>
+        </div>
 
+        <aside class="side">
         <div class="upload-section">
             <h3>Upload New Video</h3>
             <form id="uploadForm" action="/upload/" method="POST" enctype="multipart/form-data">
@@ -365,7 +438,10 @@
             <li class="empty-msg">No videos found. Upload one above.</li>
             {% endfor %}
         </ul>
+        </aside>
+        </div>
     </div>
+    <footer class="foot">Uploads are scanned for strobe, red-flash and pattern triggers. Embed any video on your own site with the Embed button.</footer>
 
     <!-- Hidden canvas for image analysis -->
     <canvas id="analysisCanvas"></canvas>
