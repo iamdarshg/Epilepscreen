@@ -251,6 +251,7 @@
             width: 100%; height: 100%;
             object-fit: contain;
             transition: filter 0.3s ease;
+            visibility: hidden; /* shown once a source is set, hides the empty-video throbber */
         }
 
         /* Upload Form */
@@ -591,6 +592,7 @@
 
         async function playVideo(path, analyzed, kind) {
             source.src = path;
+            video.style.visibility = 'visible';
             video.load();
             videoLoading.style.display = 'flex';
             document.getElementById('noVideo').style.display = 'none';
