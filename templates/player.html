@@ -102,6 +102,30 @@
             border: 1px solid var(--border);
         }
 
+        /* Portrait mode for shorts / vertical video (9:16) */
+        .video-wrapper.portrait {
+            padding-top: 0;
+            height: min(68vh, 620px);
+            max-width: 360px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .format-tag {
+            position: absolute;
+            top: 10px; left: 10px;
+            background: rgba(0,0,0,0.75);
+            color: var(--text-muted);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: var(--font-mono);
+            z-index: 10;
+            border: 1px solid var(--border);
+            letter-spacing: 0.03em;
+            display: none;
+        }
+
         video {
             position: absolute;
             top: 0; left: 0;
@@ -311,6 +335,7 @@
                 <div class="spinner"></div>Loading video...
             </div>
             <div id="safetyBadge" class="safety-indicator">Photosensitive Guard Active</div>
+            <div id="formatTag" class="format-tag">16:9</div>
             <video id="mainPlayer" controls crossorigin="anonymous">
                 <source src="" type="video/mp4" id="videoSource">
                 Your browser does not support the video tag.
@@ -400,6 +425,16 @@
 
         video.addEventListener('loadeddata', function() {
             videoLoading.style.display = 'none';
+        });
+
+        // Switch between landscape and portrait (shorts) layout
+        video.addEventListener('loadedmetadata', function() {
+            var wrap = document.querySelector('.video-wrapper');
+            var tag = document.getElementById('formatTag');
+            var isPortrait = video.videoHeight > video.videoWidth;
+            wrap.classList.toggle('portrait', isPortrait);
+            tag.textContent = isPortrait ? '9:16 SHORT' : '16:9';
+            tag.style.display = 'block';
         });
 
         async function analyzeVideo(path) {
