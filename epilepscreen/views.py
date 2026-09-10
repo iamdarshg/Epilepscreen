@@ -28,8 +28,15 @@ def index(request):
         cnx = get_db_connection()
         cursor = cnx.cursor(dictionary=True)
         
-        # Select only metadata, not the heavy blob
-        query = "SELECT hash, title, time_uploaded FROM epilepsy ORDER BY time_uploaded DESC"
+        # Select only metadata, not the heavy blob.
+        # The EXISTS subquery tells the template whether Python-side
+        # analysis has already stored hazard events for each video.
+        query = (
+            "SELECT hash, title, time_uploaded, "
+            "EXISTS(SELECT 1 FROM hazard_event "
+            "WHERE video_hash = epilepsy.hash) AS analyzed "
+            "FROM epilepsy ORDER BY time_uploaded DESC"
+        )
         cursor.execute(query)
         rows = cursor.fetchall()
         
@@ -38,6 +45,7 @@ def index(request):
             videos.append({
                 'title': row['title'],
                 'uploaded_at': row['time_uploaded'],
+                'analyzed': bool(row['analyzed']),
                 # We generate a virtual URL that points to our stream_video view
                 'file_path': f"/stream/{row['hash']}/"
             })

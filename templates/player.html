@@ -350,6 +350,18 @@
         .video-item span { font-weight: 600; font-size: 14px; }
         .video-item small { color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
 
+        .needs-analysis {
+            font-style: normal;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            border-radius: 4px;
+            padding: 1px 6px;
+            margin-left: 6px;
+            letter-spacing: 0.04em;
+        }
+
         .video-item button {
             width: auto;
             padding: 5px 12px;
@@ -428,8 +440,8 @@
         <h3 class="section-label">Library</h3>
         <ul class="video-list">
             {% for video in videos %}
-            <li class="video-item" onclick="playVideo('{{ video.file_path }}')">
-                <span>{{ video.title }}</span>
+            <li class="video-item" onclick="playVideo('{{ video.file_path }}', {{ video.analyzed|yesno:'true,false' }})">
+                <span>{{ video.title }}{% if not video.analyzed %} <em class="needs-analysis">needs analysis</em>{% endif %}</span>
                 <small>{{ video.uploaded_at }}</small>
                 <button onclick="event.stopPropagation(); analyzeVideo('{{ video.file_path }}')">Analyze</button>
                 <button onclick="event.stopPropagation(); copyEmbed()">Embed</button>
@@ -487,17 +499,40 @@
             }, 4000);
         }
 
-        function playVideo(path) {
+        // Server-side analysis call (detection itself runs in Python).
+        // Returns the parsed risk profile JSON.
+        async function runAnalysis(path) {
+            const res = await fetch(path.replace('/stream/', '/analyze/'));
+            return res.json();
+        }
+
+        async function playVideo(path, analyzed) {
             source.src = path;
             video.load();
             videoLoading.style.display = 'flex';
             video.play();
             const hash = path.split('/').filter(Boolean)[1];
+            const attachGuard = function() {
+                return window.Epilepscreen.attach(video, {
+                    eventsUrl: '/events/' + hash + '/',
+                    paddingSeconds: 0.2,
+                });
+            };
             if (guard) guard.detach();
-            guard = window.Epilepscreen.attach(video, {
-                eventsUrl: '/events/' + hash + '/',
-                paddingSeconds: 0.2,
-            });
+            guard = attachGuard();
+            // First play of an unanalyzed video: run Python analysis now so
+            // the guard has real hazard events, then re-attach to pick them up.
+            if (!analyzed) {
+                showToast('First play: analyzing video for triggers...', 'info');
+                try {
+                    await runAnalysis(path);
+                    guard.detach();
+                    guard = attachGuard();
+                    showToast('Analysis complete. Guard is active.', 'success');
+                } catch (err) {
+                    showToast('Analysis failed: ' + err.message, 'error');
+                }
+            }
         }
 
         video.addEventListener('loadeddata', function() {
@@ -520,8 +555,7 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Analyzing...';
             try {
-                const res = await fetch(path.replace('/stream/', '/analyze/'));
-                const data = await res.json();
+                const data = await runAnalysis(path);
                 if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
                 if (data.is_safe) { showToast('Safe: no photosensitive triggers detected.', 'success'); return; }
                 const summary = data.events

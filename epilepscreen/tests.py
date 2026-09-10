@@ -18,6 +18,21 @@ class IndexTests(TestCase):
         self.assertContains(resp, "No videos found")
         self.assertEqual(list(resp.context["videos"]), [])
 
+    def test_index_marks_analyzed_videos(self):
+        rows = [{"hash": 42, "title": "v", "time_uploaded": "2024-01-01",
+                 "analyzed": 1}]
+        mock_cnx = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = rows
+        mock_cnx.cursor.return_value = mock_cursor
+        with patch("epilepscreen.views.get_db_connection",
+                   return_value=mock_cnx):
+            resp = self.client.get("/")
+            self.assertEqual(resp.status_code, 200)
+            videos = list(resp.context["videos"])
+            self.assertEqual(len(videos), 1)
+            self.assertTrue(videos[0]["analyzed"])
+
 
 class UploadTests(TestCase):
     def test_get_redirects_to_index(self):
