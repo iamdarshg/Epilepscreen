@@ -2,7 +2,7 @@
 import datetime
 import json
 
-from photosensitive.analyzer import HazardEvent
+from photosensitive.analyzer import HazardEvent, RiskProfile
 
 
 def save_events(video_hash: int, events: list[HazardEvent]) -> int:
@@ -35,6 +35,33 @@ def save_events(video_hash: int, events: list[HazardEvent]) -> int:
     except Exception as err:
         print(f"Error saving events: {err}")
         return 0
+    finally:
+        if cnx:
+            cnx.close()
+
+
+def save_analysis(video_hash: int, profile: RiskProfile) -> None:
+    """Record that a video was analyzed, even when it came back safe.
+
+    Safe videos store no hazard events, so without this row the site
+    could never tell "analyzed and safe" apart from "never analyzed".
+    """
+    from epilepscreen.views import get_db_connection
+
+    cnx = None
+    try:
+        cnx = get_db_connection()
+        cursor = cnx.cursor()
+        cursor.execute(
+            "REPLACE INTO analysis (video_hash, is_safe, risk_flags, "
+            "checked_at) VALUES (%s, %s, %s, %s)",
+            (video_hash, int(profile.is_safe),
+             json.dumps(profile.risk_flags), datetime.datetime.now()),
+        )
+        cnx.commit()
+        cursor.close()
+    except Exception as err:
+        print(f"Error saving analysis: {err}")
     finally:
         if cnx:
             cnx.close()

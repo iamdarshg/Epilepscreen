@@ -32,6 +32,15 @@ hazard_query = """CREATE TABLE IF NOT EXISTS hazard_event (
 )
 """
 mycursor.execute(hazard_query)
+
+analysis_query = """CREATE TABLE IF NOT EXISTS analysis (
+  video_hash BIGINT UNSIGNED PRIMARY KEY,
+  is_safe BOOL NOT NULL,
+  risk_flags JSON,
+  checked_at DATETIME NOT NULL
+)
+"""
+mycursor.execute(analysis_query)
 mydb.commit()
 
 mycursor.close()

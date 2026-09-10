@@ -63,3 +63,20 @@ class EmbedTests(TestCase):
     def test_unavailable_video_returns_500(self, _mock):
         resp = self.client.get("/embed/123/")
         self.assertEqual(resp.status_code, 500)
+
+
+class AnalysisStoreTests(TestCase):
+    def test_save_analysis_replaces_state_row(self):
+        from epilepscreen.analysis_store import save_analysis
+        profile = MagicMock()
+        profile.is_safe = True
+        profile.risk_flags = []
+        mock_cnx = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cnx.cursor.return_value = mock_cursor
+        with patch("epilepscreen.views.get_db_connection",
+                   return_value=mock_cnx):
+            save_analysis(42, profile)
+            sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("REPLACE INTO analysis", sql)
+            mock_cnx.commit.assert_called_once()

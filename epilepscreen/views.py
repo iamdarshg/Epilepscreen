@@ -14,13 +14,34 @@ from epilepscreen.media import (
     content_type_for,
     is_audio_content,
     normalize_category,
+    probe_media,
+    suggest_category,
 )
 from photosensitive.analyze_video import analyze_video_file
-from epilepscreen.analysis_store import save_events
+from epilepscreen.analysis_store import save_analysis, save_events
 
 
 def get_db_connection():
     return mysql.connector.connect(**settings.DB_CONFIG)
+
+
+def _set_category(video_hash: int, category: str) -> None:
+    """Store an auto-detected category for a video (raw SQL)."""
+    cnx = None
+    try:
+        cnx = get_db_connection()
+        cursor = cnx.cursor()
+        cursor.execute(
+            "UPDATE epilepsy SET category = %s WHERE hash = %s",
+            (category, video_hash),
+        )
+        cnx.commit()
+        cursor.close()
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+    finally:
+        if cnx:
+            cnx.close()
 
 def index(request):
     """
@@ -34,11 +55,11 @@ def index(request):
         cursor = cnx.cursor(dictionary=True)
         
         # Select only metadata, not the heavy blob.
-        # The EXISTS subquery tells the template whether Python-side
-        # analysis has already stored hazard events for each video.
+        # The EXISTS subquery reads the analysis table, which records every
+        # analysis run - including safe ones that store no hazard events.
         query = (
             "SELECT hash, title, time_uploaded, category, content_type, "
-            "EXISTS(SELECT 1 FROM hazard_event "
+            "EXISTS(SELECT 1 FROM analysis "
             "WHERE video_hash = epilepsy.hash) AS analyzed "
             "FROM epilepsy ORDER BY time_uploaded DESC"
         )
@@ -188,13 +209,24 @@ def analyze_video(request, video_hash):
     cnx = None
     try:
         cnx = get_db_connection()
-        cursor = cnx.cursor()
-        cursor.execute("SELECT movie FROM epilepsy WHERE hash = %s", (video_hash,))
+        cursor = cnx.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT movie, content_type, category, title "
+            "FROM epilepsy WHERE hash = %s",
+            (video_hash,),
+        )
         row = cursor.fetchone()
         cursor.close()
         if not row:
             return JsonResponse({"error": "Video not found"}, status=404)
-        video_data = lzma.decompress(row[0])
+        if is_audio_content(row.get("content_type")):
+            return JsonResponse(
+                {"error": "Audio files carry no visual triggers to analyze"},
+                status=400,
+            )
+        video_data = lzma.decompress(row["movie"])
+        category = row.get("category")
+        title = row.get("title") or ""
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
     finally:
@@ -206,10 +238,20 @@ def analyze_video(request, video_hash):
         tmp_path = tmp.name
     try:
         profile = analyze_video_file(tmp_path)
+        # Auto-fill a missing category from the footage itself.
+        if not category:
+            info = probe_media(tmp_path) or {}
+            category = suggest_category(
+                duration_s=info.get("duration_s"),
+                width=info.get("width"), height=info.get("height"),
+                title=title)
     finally:
         os.unlink(tmp_path)
 
     save_events(int(video_hash), profile.events)
+    save_analysis(int(video_hash), profile)
+    if category:
+        _set_category(int(video_hash), category)
 
     return JsonResponse({
         "hash": video_hash,

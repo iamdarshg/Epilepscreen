@@ -18,8 +18,9 @@ class Command(BaseCommand):
         profile = analyze_video_file(options["path"])
         stored = 0
         if options.get("hash") is not None:
-            from epilepscreen.analysis_store import save_events
+            from epilepscreen.analysis_store import save_analysis, save_events
             stored = save_events(options["hash"], profile.events)
+            save_analysis(options["hash"], profile)
         payload = {
             "is_safe": profile.is_safe,
             "risk_flags": profile.risk_flags,
