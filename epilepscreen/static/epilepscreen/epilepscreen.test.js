@@ -63,6 +63,16 @@ function assert(cond, msg) {
   assert(typeof h2.detach === 'function', 'liveDetect attach returns handle');
   h2.detach();
 
+  // Task 4: viewer-facing on/off switch
+  assert(h1.isEnabled() === true, 'guard enabled by default');
+  h1.setEnabled(false);
+  assert(h1.isEnabled() === false, 'guard reports disabled');
+  fns._simulate(6);
+  assert(fns._dimmed() === false, 'disabled guard never dims');
+  h1.setEnabled(true);
+  fns._simulate(6);
+  assert(fns._dimmed() === true, 're-enabled guard dims again');
+
   h1.detach();
   if (failures === 0) console.log('OK: all overlay widget tests passed');
   else { console.error(failures + ' failure(s)'); process.exit(1); }

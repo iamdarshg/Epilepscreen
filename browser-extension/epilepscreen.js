@@ -108,11 +108,33 @@
       badge.className = 'epilepscreen-badge';
       badge.style.cssText =
         'position:absolute;top:8px;right:8px;z-index:11;padding:4px 8px;' +
-        'font:12px sans-serif;background:rgba(0,0,0,0.7);border-radius:4px;display:none;';
+        'font:12px sans-serif;background:rgba(0,0,0,0.7);border-radius:4px;display:none;cursor:pointer;';
       badge.textContent = opts.badgeText || 'Photosensitive guard active';
       badge.style.color = opts.badgeColor || '#cf6679';
+      badge.title = 'Click to turn the guard off';
       if (video.parentElement) video.parentElement.appendChild(badge);
       const setBadge = function (on) { badge.style.display = on ? 'block' : 'none'; };
+
+      // Viewer-facing on/off switch. Clicking the badge toggles it, and the
+      // handle exposes setEnabled/isEnabled for page-level toggle buttons.
+      let userDisabled = false;
+      const defaultBadgeText = opts.badgeText || 'Photosensitive guard active';
+      const setUserDisabled = function (off) {
+        userDisabled = off;
+        if (off) {
+          dimmed = false;
+          setDimmed(overlay, dimFilter, false);
+          badge.textContent = 'Guard off - click to enable';
+          badge.style.display = 'block';
+          badge.title = 'Click to turn the guard on';
+        } else {
+          badge.textContent = defaultBadgeText;
+          badge.style.display = dimmed ? 'block' : 'none';
+          badge.title = 'Click to turn the guard off';
+          tick();
+        }
+      };
+      badge.onclick = function () { setUserDisabled(!userDisabled); };
 
       const refresh = async function () {
         try {
@@ -134,6 +156,7 @@
       let liveTimer = null;
 
       const tick = function () {
+        if (userDisabled) return; // badge already shows the off state
         const evHazard = inHazard(video.currentTime, events, padding);
         const liveHazard = live ? live.detect(video) : false;
         const should = evHazard || liveHazard;
@@ -157,6 +180,8 @@
           if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
           if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
         },
+        setEnabled: function (on) { setUserDisabled(!on); },
+        isEnabled: function () { return !userDisabled; },
         _internals: {
           _inHazard: inHazard,
           _simulate: function (t) { video.currentTime = t; tick(); },
