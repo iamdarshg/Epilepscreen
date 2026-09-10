@@ -1,0 +1,241 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse - Epilepscreen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-card: #13131a;
+            --bg-input: #1a1a24;
+            --text-primary: #e8e6f0;
+            --text-muted: #8a879a;
+            --accent: #00e5a0;
+            --accent-dim: rgba(0, 229, 160, 0.12);
+            --danger: #ff4d6a;
+            --border: #2a2a36;
+            --radius: 10px;
+            --font-body: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px 16px 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-image:
+                radial-gradient(ellipse 600px 400px at 20% 10%, rgba(0,229,160,0.04), transparent),
+                radial-gradient(ellipse 500px 300px at 80% 80%, rgba(255,77,106,0.03), transparent);
+        }
+
+        #brand {
+            width: 100%;
+            max-width: 1080px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .brand-mark {
+            width: 14px; height: 14px;
+            background: var(--accent);
+            transform: rotate(45deg);
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        #brand h1 { font-size: 1.4rem; letter-spacing: -0.02em; }
+        #brand p { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+        .brand-text { flex: 1; }
+
+        .tabs { display: flex; gap: 6px; }
+        .tabs a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            font-family: var(--font-mono);
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+        }
+        .tabs a:hover { color: var(--text-primary); }
+        .tabs a.active { color: var(--accent); border-color: var(--border); background: var(--bg-card); }
+
+        .container {
+            width: 100%;
+            max-width: 1080px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 28px;
+            border-radius: var(--radius);
+        }
+
+        .hazard-bar {
+            height: 8px;
+            margin: -28px -28px 22px;
+            border-radius: 10px 10px 0 0;
+            background: repeating-linear-gradient(-45deg, var(--accent) 0 10px, transparent 10px 20px);
+            opacity: 0.6;
+        }
+
+        .search-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        .search-row input[type="text"], .search-row select {
+            padding: 10px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 6px;
+            font-family: var(--font-body);
+            font-size: 14px;
+        }
+        .search-row input[type="text"] { flex: 2; min-width: 160px; }
+        .search-row select { flex: 1; min-width: 130px; }
+        .search-row button, .search-row a.clear {
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: var(--font-body);
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .search-row button { background: var(--accent); color: #000; border: none; }
+        .search-row a.clear { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+
+        .count { font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); margin-bottom: 14px; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+            list-style: none;
+            padding: 0;
+        }
+
+        .card {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .card h3 { font-size: 15px; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+        .card small { color: var(--text-muted); font-size: 11px; font-family: var(--font-mono); }
+
+        .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+        .chip {
+            font-size: 10px;
+            font-family: var(--font-mono);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            color: var(--text-muted);
+            letter-spacing: 0.04em;
+        }
+        .chip-cat { color: var(--accent); }
+        .chip-risk { color: var(--danger); border-color: var(--danger); }
+        .chip-safe { color: var(--accent); border-color: var(--accent); }
+        .chip-pending { color: var(--text-muted); }
+
+        .card a.play {
+            margin-top: 4px;
+            text-align: center;
+            background: var(--accent);
+            color: #000;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 8px;
+            border-radius: 6px;
+            text-decoration: none;
+        }
+        .card a.play:hover { opacity: 0.88; }
+
+        .empty-msg { color: var(--text-muted); font-size: 14px; padding: 20px; text-align: center; }
+
+        .foot {
+            width: 100%;
+            max-width: 1080px;
+            margin-top: 20px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 12px 8px 32px; }
+            .container { padding: 18px 14px; }
+            .hazard-bar { margin: -18px -14px 18px; }
+        }
+    </style>
+</head>
+<body>
+    <header id="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-text">
+            <h1>epilepscreen</h1>
+            <p>photosensitive-safe video, anywhere</p>
+        </div>
+        <nav class="tabs">
+            <a href="/">Player</a>
+            <a href="/browse/" class="active">Browse</a>
+        </nav>
+    </header>
+    <div class="container">
+        <div class="hazard-bar"></div>
+        <form class="search-row" method="GET" action="/browse/">
+            <input type="text" name="q" placeholder="Search titles..." value="{{ q }}">
+            <select name="category">
+                <option value="">All categories</option>
+                {% for c in categories %}
+                <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Search</button>
+            <a class="clear" href="/browse/">Clear</a>
+        </form>
+        <p class="count">{{ videos|length }} item{{ videos|length|pluralize }}</p>
+        <ul class="grid">
+            {% for video in videos %}
+            <li class="card">
+                <h3>{{ video.title }}</h3>
+                <small>{{ video.uploaded_at }}</small>
+                <div class="chips">
+                    <span class="chip chip-cat">{{ video.category }}</span>
+                    <span class="chip">{{ video.kind }}</span>
+                    {% if video.analyzed and video.is_safe %}
+                    <span class="chip chip-safe">SAFE</span>
+                    {% elif video.analyzed %}
+                    <span class="chip chip-risk">{{ video.event_count }} HAZARD{{ video.event_count|pluralize }}</span>
+                    {% for kind in video.kinds %}
+                    <span class="chip chip-risk">{{ kind }}</span>
+                    {% endfor %}
+                    {% else %}
+                    <span class="chip chip-pending">NOT ANALYZED</span>
+                    {% endif %}
+                </div>
+                <a class="play" href="/?play={{ video.hash }}">Play</a>
+            </li>
+            {% empty %}
+            <li class="empty-msg">Nothing here. Upload something from the Player tab.</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <footer class="foot">Search and filter are plain SQL LIKE queries over the uploads table.</footer>
+</body>
+</html>

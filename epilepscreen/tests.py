@@ -80,3 +80,46 @@ class AnalysisStoreTests(TestCase):
             sql = mock_cursor.execute.call_args[0][0]
             self.assertIn("REPLACE INTO analysis", sql)
             mock_cnx.commit.assert_called_once()
+
+
+def _mock_db(video_rows, stats_rows=(), cat_rows=()):
+    """Fake mysql connection: fetchall returns one list per query."""
+    mock_cnx = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.fetchall.side_effect = [video_rows, stats_rows, cat_rows]
+    mock_cnx.cursor.return_value = mock_cursor
+    return mock_cnx, mock_cursor
+
+
+class BrowseTests(TestCase):
+    def test_browse_merges_stats_flags_and_search(self):
+        video_rows = [{
+            "hash": 7, "title": "Gig", "time_uploaded": "2024-01-01",
+            "category": "Music Video", "content_type": "video/mp4",
+            "is_safe": 0, "risk_flags": '["flicker"]',
+        }]
+        stats_rows = [{"video_hash": 7, "n": 3, "kinds": "flicker,red_flash"}]
+        cat_rows = [{"category": "Music Video"}]
+        mock_cnx, mock_cursor = _mock_db(video_rows, stats_rows, cat_rows)
+        with patch("epilepscreen.views.get_db_connection",
+                   return_value=mock_cnx):
+            resp = self.client.get("/browse/?q=gig")
+            self.assertEqual(resp.status_code, 200)
+            videos = list(resp.context["videos"])
+            self.assertEqual(len(videos), 1)
+            self.assertEqual(videos[0]["event_count"], 3)
+            self.assertEqual(videos[0]["kinds"], ["flicker", "red_flash"])
+            self.assertTrue(videos[0]["analyzed"])
+            self.assertFalse(videos[0]["is_safe"])
+            # Title search goes to SQL as a LIKE parameter.
+            first_params = mock_cursor.execute.call_args_list[0][0][1]
+            self.assertIn("%gig%", first_params)
+
+    def test_browse_category_filter_reaches_sql(self):
+        mock_cnx, mock_cursor = _mock_db([], [], [])
+        with patch("epilepscreen.views.get_db_connection",
+                   return_value=mock_cnx):
+            resp = self.client.get("/browse/?category=Short")
+            self.assertEqual(resp.status_code, 200)
+            first_params = mock_cursor.execute.call_args_list[0][0][1]
+            self.assertIn("Short", first_params)

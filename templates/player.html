@@ -69,6 +69,19 @@
 
         .brand-text { flex: 1; }
 
+        .tabs { display: flex; gap: 6px; }
+        .tabs a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            font-family: var(--font-mono);
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+        }
+        .tabs a:hover { color: var(--text-primary); }
+        .tabs a.active { color: var(--accent); border-color: var(--border); background: var(--bg-card); }
+
         #light {
             background: var(--bg-input);
             color: var(--text-muted);
@@ -398,6 +411,10 @@
             <h1>epilepscreen</h1>
             <p>photosensitive-safe video, anywhere</p>
         </div>
+        <nav class="tabs">
+            <a href="/" class="active">Player</a>
+            <a href="/browse/">Browse</a>
+        </nav>
         <button id="light">&#9681;</button>
     </header>
     <div class="container">
@@ -489,7 +506,15 @@
             source.src = path;
             video.load();
             videoLoading.style.display = 'flex';
-            video.play();
+            // play() rejects when the browser blocks autoplay without a
+            // user gesture (e.g. arriving via a browse ?play= link).
+            var started = video.play();
+            if (started && started.catch) {
+                started.catch(function() {
+                    videoLoading.style.display = 'none';
+                    showToast('Press play to start the video.', 'info');
+                });
+            }
             const hash = path.split('/').filter(Boolean)[1];
             const attachGuard = function() {
                 return window.Epilepscreen.attach(video, {
@@ -581,6 +606,10 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Uploading...';
         });
+
+        {% if autoplay %}
+        playVideo('{{ autoplay.file_path }}', {{ autoplay.analyzed|yesno:'true,false' }}, '{{ autoplay.kind }}');
+        {% endif %}
 
     </script>
 </body>

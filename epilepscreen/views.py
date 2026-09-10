@@ -70,6 +70,7 @@ def index(request):
         for row in rows:
             ctype = row.get("content_type") or "video/mp4"
             videos.append({
+                'hash': row['hash'],
                 'title': row['title'],
                 'uploaded_at': row['time_uploaded'],
                 'analyzed': bool(row['analyzed']),
@@ -85,8 +86,18 @@ def index(request):
     finally:
         if cnx:
             cnx.close()
-        
-    return render(request, 'player.html', {'videos': videos})
+
+    # Browse cards link here with ?play=<hash> to start playback directly.
+    autoplay = None
+    wanted = request.GET.get("play")
+    if wanted:
+        for v in videos:
+            if str(v["hash"]) == str(wanted):
+                autoplay = v
+                break
+
+    return render(request, 'player.html',
+                  {'videos': videos, 'autoplay': autoplay})
 
 def stream_video(request, video_hash):
     """
@@ -291,6 +302,92 @@ def video_events(request, video_hash):
         for r in rows
     ]
     return JsonResponse({"events": events})
+
+
+def browse(request):
+    """Browse every upload: title search, category filter, risk badges.
+
+    All data comes from MySQL through mysql.connector: video metadata
+    plus the analysis state table, merged in Python with per-video
+    hazard-event stats.
+    """
+    q = (request.GET.get("q") or "").strip()
+    category = (request.GET.get("category") or "").strip()
+    videos = []
+    categories = []
+    cnx = None
+    try:
+        cnx = get_db_connection()
+        cursor = cnx.cursor(dictionary=True)
+
+        where = ["e.title LIKE %s"]
+        params = [f"%{q}%"]
+        if category:
+            where.append("e.category = %s")
+            params.append(category)
+        cursor.execute(
+            "SELECT e.hash, e.title, e.time_uploaded, e.category, "
+            "e.content_type, a.is_safe, a.risk_flags "
+            "FROM epilepsy e LEFT JOIN analysis a "
+            "ON a.video_hash = e.hash "
+            f"WHERE {' AND '.join(where)} "
+            "ORDER BY e.time_uploaded DESC",
+            params,
+        )
+        rows = cursor.fetchall()
+
+        hashes = [r["hash"] for r in rows]
+        stats = {}
+        if hashes:
+            placeholders = ", ".join(["%s"] * len(hashes))
+            cursor.execute(
+                "SELECT video_hash, COUNT(*) AS n, "
+                "GROUP_CONCAT(DISTINCT kind) AS kinds FROM hazard_event "
+                f"WHERE video_hash IN ({placeholders}) GROUP BY video_hash",
+                hashes,
+            )
+            for s in cursor.fetchall():
+                stats[s["video_hash"]] = s
+
+        cursor.execute(
+            "SELECT DISTINCT category FROM epilepsy "
+            "WHERE category IS NOT NULL AND category <> '' "
+            "ORDER BY category"
+        )
+        categories = [r["category"] for r in cursor.fetchall()]
+        cursor.close()
+
+        for row in rows:
+            ctype = row.get("content_type") or "video/mp4"
+            st = stats.get(row["hash"], {})
+            kinds = (st.get("kinds") or "").split(",") if st.get("kinds") \
+                else []
+            try:
+                flags = json.loads(row.get("risk_flags") or "[]")
+            except (TypeError, ValueError):
+                flags = []
+            videos.append({
+                "hash": row["hash"],
+                "title": row["title"],
+                "uploaded_at": row["time_uploaded"],
+                "category": row.get("category") or "Other",
+                "kind": "audio" if is_audio_content(ctype) else "video",
+                "analyzed": row.get("is_safe") is not None,
+                "is_safe": bool(row.get("is_safe")),
+                "risk_flags": flags,
+                "event_count": int(st.get("n") or 0),
+                "kinds": [k for k in kinds if k],
+                "file_path": f"/stream/{row['hash']}/",
+            })
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+    finally:
+        if cnx:
+            cnx.close()
+    return render(request, "browse.html", {
+        "videos": videos, "q": q, "category": category,
+        "categories": categories,
+    })
 
 
 @xframe_options_exempt

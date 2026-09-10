@@ -9,4 +9,5 @@ urlpatterns = [
     path("analyze/<str:video_hash>/", views.analyze_video, name="analyze_video"),
     path("events/<str:video_hash>/", views.video_events, name="video_events"),
     path("embed/<str:video_hash>/", views.embed, name="embed"),
+    path("browse/", views.browse, name="browse"),
 ]
