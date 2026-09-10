@@ -10,6 +10,11 @@ from django.conf import settings
 from django.views.decorators.clickjacking import xframe_options_exempt
 import lzma
 
+from epilepscreen.media import (
+    content_type_for,
+    is_audio_content,
+    normalize_category,
+)
 from photosensitive.analyze_video import analyze_video_file
 from epilepscreen.analysis_store import save_events
 
@@ -32,7 +37,7 @@ def index(request):
         # The EXISTS subquery tells the template whether Python-side
         # analysis has already stored hazard events for each video.
         query = (
-            "SELECT hash, title, time_uploaded, "
+            "SELECT hash, title, time_uploaded, category, content_type, "
             "EXISTS(SELECT 1 FROM hazard_event "
             "WHERE video_hash = epilepsy.hash) AS analyzed "
             "FROM epilepsy ORDER BY time_uploaded DESC"
@@ -42,10 +47,13 @@ def index(request):
         
         # Transform data for the template
         for row in rows:
+            ctype = row.get("content_type") or "video/mp4"
             videos.append({
                 'title': row['title'],
                 'uploaded_at': row['time_uploaded'],
                 'analyzed': bool(row['analyzed']),
+                'category': row.get("category") or "Other",
+                'kind': 'audio' if is_audio_content(ctype) else 'video',
                 # We generate a virtual URL that points to our stream_video view
                 'file_path': f"/stream/{row['hash']}/"
             })
@@ -68,8 +76,8 @@ def stream_video(request, video_hash):
         cnx = get_db_connection()
         cursor = cnx.cursor()
         
-        # Fetch the actual video binary
-        query = "SELECT movie FROM epilepsy WHERE hash = %s"
+        # Fetch the actual video binary plus its stored MIME type
+        query = "SELECT movie, content_type FROM epilepsy WHERE hash = %s"
         cursor.execute(query, (video_hash,))
         row = cursor.fetchone()
         
@@ -77,6 +85,7 @@ def stream_video(request, video_hash):
         
         if row:
             video_data = lzma.decompress(row[0])
+            mime = row[1] or "video/mp4"
             size = len(video_data)
 
             # Support Range requests so browsers can seek (and play on mobile).
@@ -96,14 +105,14 @@ def stream_video(request, video_hash):
                 resp = HttpResponse(
                     video_data[start:end + 1],
                     status=206,
-                    content_type="video/mp4",
+                    content_type=mime,
                 )
                 resp["Content-Range"] = f"bytes {start}-{end}/{size}"
                 resp["Content-Length"] = str(end - start + 1)
                 resp["Accept-Ranges"] = "bytes"
                 return resp
 
-            resp = HttpResponse(video_data, content_type="video/mp4")
+            resp = HttpResponse(video_data, content_type=mime)
             resp["Accept-Ranges"] = "bytes"
             return resp
         else:
@@ -124,6 +133,12 @@ def upload_video(request):
     if request.method == 'POST' and request.FILES.get('video_file'):
         video_file = request.FILES['video_file']
         title = request.POST.get('title', 'Untitled')
+        # Free-text category (blank = unknown, may be auto-filled later).
+        category = normalize_category(request.POST.get('category', ''))
+        # Bytes are stored exactly as uploaded (lossless); remember the type
+        # so audio (mp3/flac/wav) streams back with the right MIME type.
+        content_type = content_type_for(
+            video_file.name, getattr(video_file, "content_type", None))
 
         # Reject files over 100MB to prevent memory exhaustion
         if video_file.size > 100 * 1024 * 1024:
@@ -147,10 +162,11 @@ def upload_video(request):
             cursor = cnx.cursor()
 
             query = """
-                INSERT INTO epilepsy (hash, time_uploaded, title, movie)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO epilepsy (hash, time_uploaded, title, category,
+                                      content_type, movie)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
-            vals = (hash_val, now, title, movie_blob)
+            vals = (hash_val, now, title, category, content_type, movie_blob)
             
             cursor.execute(query, vals)
             cnx.commit()

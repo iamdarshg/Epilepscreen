@@ -12,6 +12,8 @@ query = """CREATE TABLE IF NOT EXISTS epilepsy (
   hash BIGINT UNSIGNED PRIMARY KEY,
   time_uploaded DATETIME NOT NULL,
   title TEXT NOT NULL,
+  category VARCHAR(40) NULL,
+  content_type VARCHAR(60) NULL,
   movie LONGBLOB
   )
 """

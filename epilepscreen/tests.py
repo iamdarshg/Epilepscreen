@@ -20,7 +20,8 @@ class IndexTests(TestCase):
 
     def test_index_marks_analyzed_videos(self):
         rows = [{"hash": 42, "title": "v", "time_uploaded": "2024-01-01",
-                 "analyzed": 1}]
+                 "analyzed": 1, "category": "Movie",
+                 "content_type": "video/mp4"}]
         mock_cnx = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = rows

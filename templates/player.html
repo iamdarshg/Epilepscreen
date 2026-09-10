@@ -347,6 +347,17 @@
             letter-spacing: 0.04em;
         }
 
+        .cat-chip {
+            font-size: 10px;
+            font-family: var(--font-mono);
+            color: var(--accent);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            margin-left: 6px;
+            letter-spacing: 0.04em;
+        }
+
         .video-item button {
             width: auto;
             padding: 5px 12px;
@@ -414,7 +425,15 @@
             <form id="uploadForm" action="/upload/" method="POST" enctype="multipart/form-data">
                 {% csrf_token %}
                 <input type="text" name="title" placeholder="Video Title" required>
-                <input type="file" name="video_file" accept="video/*" required>
+                <input type="text" name="category" list="catlist" placeholder="Category (optional: Short, Movie, Music Video, Music...)">
+                <datalist id="catlist">
+                    <option value="Short"></option>
+                    <option value="Movie"></option>
+                    <option value="Music Video"></option>
+                    <option value="Music"></option>
+                    <option value="Other"></option>
+                </datalist>
+                <input type="file" name="video_file" accept="video/*,audio/*" required>
                 <button type="submit" id="uploadBtn">Upload to Database</button>
             </form>
         </div>
@@ -422,8 +441,8 @@
         <h3 class="section-label">Library</h3>
         <ul class="video-list">
             {% for video in videos %}
-            <li class="video-item" onclick="playVideo('{{ video.file_path }}', {{ video.analyzed|yesno:'true,false' }})">
-                <span>{{ video.title }}{% if not video.analyzed %} <em class="needs-analysis">needs analysis</em>{% endif %}</span>
+            <li class="video-item" onclick="playVideo('{{ video.file_path }}', {{ video.analyzed|yesno:'true,false' }}, '{{ video.kind }}')">
+                <span>{{ video.title }}{% if not video.analyzed and video.kind != 'audio' %} <em class="needs-analysis">needs analysis</em>{% endif %} <small class="cat-chip">{{ video.category }}</small></span>
                 <small>{{ video.uploaded_at }}</small>
                 <button onclick="event.stopPropagation(); analyzeVideo('{{ video.file_path }}')">Analyze</button>
                 <button onclick="event.stopPropagation(); copyEmbed()">Embed</button>
@@ -466,7 +485,7 @@
             return res.json();
         }
 
-        async function playVideo(path, analyzed) {
+        async function playVideo(path, analyzed, kind) {
             source.src = path;
             video.load();
             videoLoading.style.display = 'flex';
@@ -480,6 +499,12 @@
             };
             if (guard) guard.detach();
             guard = attachGuard();
+            // Audio carries no visual triggers, so there is nothing to analyze.
+            if (kind === 'audio') {
+                document.getElementById('formatTag').textContent = 'AUDIO';
+                document.getElementById('formatTag').style.display = 'block';
+                return;
+            }
             // First play of an unanalyzed video: run Python analysis now so
             // the guard has real hazard events, then re-attach to pick them up.
             if (!analyzed) {
@@ -503,6 +528,12 @@
         video.addEventListener('loadedmetadata', function() {
             var wrap = document.querySelector('.video-wrapper');
             var tag = document.getElementById('formatTag');
+            if (video.videoWidth === 0) {
+                wrap.classList.remove('portrait');
+                tag.textContent = 'AUDIO';
+                tag.style.display = 'block';
+                return;
+            }
             var isPortrait = video.videoHeight > video.videoWidth;
             wrap.classList.toggle('portrait', isPortrait);
             tag.textContent = isPortrait ? '9:16 SHORT' : '16:9';
