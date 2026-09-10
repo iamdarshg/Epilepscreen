@@ -26,6 +26,37 @@
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        .sr-only {
+            position: absolute;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .skip-link {
+            position: absolute;
+            left: -999px; top: 0;
+            background: var(--accent);
+            color: #000;
+            padding: 8px 14px;
+            z-index: 10000;
+            border-radius: 0 0 6px 0;
+            font-weight: 600;
+            font-size: 13px;
+            text-decoration: none;
+        }
+        .skip-link:focus { left: 0; }
+
+        a:focus-visible, button:focus-visible, input:focus-visible,
+        select:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+        .video-item:focus-visible { border-color: var(--accent); }
+
         body {
             font-family: var(--font-body);
             background: var(--bg-deep);
@@ -289,6 +320,22 @@
             margin-right: 10px;
         }
 
+        /* Placeholder shown until a video is chosen (hides the
+           browser's empty-video throbber, which looks broken) */
+        .no-video {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 0 24px;
+            color: var(--text-muted);
+            font-size: 14px;
+            z-index: 4;
+            pointer-events: none;
+        }
+
         /* Toast notification */
         .toast {
             position: fixed;
@@ -405,6 +452,7 @@
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#mainPlayer">Skip to video player</a>
     <header id="brand">
         <div class="brand-mark"></div>
         <div class="brand-text">
@@ -415,7 +463,7 @@
             <a href="/" class="active">Player</a>
             <a href="/browse/">Browse</a>
         </nav>
-        <button id="light">&#9681;</button>
+        <button id="light" aria-label="Toggle light theme">&#9681;</button>
     </header>
     <div class="container">
         <div class="hazard-bar"></div>
@@ -424,11 +472,12 @@
         <h2>SafeView Player</h2>
 
         <div class="video-wrapper">
+            <div id="noVideo" class="no-video">Pick a video from the library to start watching</div>
             <div id="videoLoading" class="video-loading" style="display:none;">
                 <div class="spinner"></div>Loading video...
             </div>
             <div id="formatTag" class="format-tag">16:9</div>
-            <video id="mainPlayer" controls crossorigin="anonymous">
+            <video id="mainPlayer" controls crossorigin="anonymous" aria-label="Video player">
                 <source src="" type="video/mp4" id="videoSource">
                 Your browser does not support the video tag.
             </video>
@@ -441,8 +490,10 @@
             <h3>Upload New Video</h3>
             <form id="uploadForm" action="/upload/" method="POST" enctype="multipart/form-data">
                 {% csrf_token %}
-                <input type="text" name="title" placeholder="Video Title" required>
-                <input type="text" name="category" list="catlist" placeholder="Category (optional: Short, Movie, Music Video, Music...)">
+                <label class="sr-only" for="titleInput">Video title</label>
+                <input id="titleInput" type="text" name="title" placeholder="Video Title" required>
+                <label class="sr-only" for="catInput">Category</label>
+                <input id="catInput" type="text" name="category" list="catlist" placeholder="Category (optional: Short, Movie, Music Video, Music...)">
                 <datalist id="catlist">
                     <option value="Short"></option>
                     <option value="Movie"></option>
@@ -450,7 +501,8 @@
                     <option value="Music"></option>
                     <option value="Other"></option>
                 </datalist>
-                <input type="file" name="video_file" accept="video/*,audio/*" required>
+                <label class="sr-only" for="fileInput">Video or audio file</label>
+                <input id="fileInput" type="file" name="video_file" accept="video/*,audio/*" required>
                 <button type="submit" id="uploadBtn">Upload to Database</button>
             </form>
         </div>
@@ -458,7 +510,7 @@
         <h3 class="section-label">Library</h3>
         <ul class="video-list">
             {% for video in videos %}
-            <li class="video-item" onclick="playVideo('{{ video.file_path }}', {{ video.analyzed|yesno:'true,false' }}, '{{ video.kind }}')">
+            <li class="video-item" tabindex="0" role="button" aria-label="Play {{ video.title }}" data-path="{{ video.file_path }}" data-analyzed="{{ video.analyzed|yesno:'true,false' }}" data-kind="{{ video.kind }}" onclick="playVideo('{{ video.file_path }}', {{ video.analyzed|yesno:'true,false' }}, '{{ video.kind }}')">
                 <span>{{ video.title }}{% if not video.analyzed and video.kind != 'audio' %} <em class="needs-analysis">needs analysis</em>{% endif %} <small class="cat-chip">{{ video.category }}</small></span>
                 <small>{{ video.uploaded_at }}</small>
                 <button onclick="event.stopPropagation(); analyzeVideo('{{ video.file_path }}')">Analyze</button>
@@ -486,6 +538,7 @@
             type = type || 'info';
             const t = document.createElement('div');
             t.className = 'toast toast-' + type;
+            t.setAttribute('role', 'status');
             t.textContent = message;
             document.body.appendChild(t);
             requestAnimationFrame(function() { t.classList.add('show'); });
@@ -506,6 +559,7 @@
             source.src = path;
             video.load();
             videoLoading.style.display = 'flex';
+            document.getElementById('noVideo').style.display = 'none';
             // play() rejects when the browser blocks autoplay without a
             // user gesture (e.g. arriving via a browse ?play= link).
             var started = video.play();
@@ -605,6 +659,16 @@
             var btn = document.getElementById('uploadBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Uploading...';
+        });
+
+        // Keyboard access for library rows (mouse users get onclick).
+        // Only fires when the row itself is focused, not its buttons.
+        document.querySelector('.video-list').addEventListener('keydown', function(e) {
+            var item = e.target.closest ? e.target.closest('.video-item') : null;
+            if (!item || e.target !== item) return;
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            playVideo(item.dataset.path, item.dataset.analyzed === 'true', item.dataset.kind);
         });
 
         {% if autoplay %}

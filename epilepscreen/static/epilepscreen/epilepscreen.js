@@ -130,11 +130,20 @@
         } else {
           badge.textContent = defaultBadgeText;
           badge.style.display = dimmed ? 'block' : 'none';
-          badge.title = 'Click to turn the guard off';
+      badge.title = 'Click to turn the guard off';
+      badge.tabIndex = 0;
+      badge.setAttribute('role', 'button');
+      badge.setAttribute('aria-label', 'Toggle photosensitive guard');
           tick();
         }
       };
       badge.onclick = function () { setUserDisabled(!userDisabled); };
+      badge.onkeydown = function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          setUserDisabled(!userDisabled);
+        }
+      };
 
       const refresh = async function () {
         try {

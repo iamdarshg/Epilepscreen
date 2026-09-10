@@ -47,7 +47,7 @@
 </head>
 <body>
     <div class="embed-wrap" id="embedWrap">
-        <video id="embedPlayer" controls crossorigin="anonymous" src="{{ stream_url }}"></video>
+        <video id="embedPlayer" controls crossorigin="anonymous" src="{{ stream_url }}" aria-label="{{ title }}"></video>
         <div class="brand">guarded by epilepscreen</div>
     </div>
     <script src="{% static 'epilepscreen/epilepscreen.js' %}"></script>

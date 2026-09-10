@@ -18,7 +18,8 @@ class FakeVideo {
 }
 
 function makeElement(tag) {
-  return { tag, style: {}, dataset: {}, textContent: '', className: '' };
+  return { tag, style: {}, dataset: {}, textContent: '', className: '',
+           setAttribute: function () {} };
 }
 global.document = { createElement: makeElement };
 global.window = {};
