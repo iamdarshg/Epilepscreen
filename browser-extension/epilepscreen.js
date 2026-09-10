@@ -6,6 +6,7 @@
  * Auto mode - include it with a `data-auto` attribute and it guards every
  * <video> on the page by itself, no further code needed:
  *   <script src="https://your-host/static/epilepscreen/epilepscreen.js" data-auto></script>
+ * Opt a single video out with <video data-epilepscreen-off ...>.
  *
  * It dims a transparent overlay over the video while a photosensitive trigger
  * is active. Triggers come from either:
@@ -205,6 +206,7 @@
         for (var i = 0; i < videos.length; i++) {
           var v = videos[i];
           if (remembered(v)) continue;
+          if (v.hasAttribute && v.hasAttribute('data-epilepscreen-off')) continue;
           remember(v);
           try {
             window.Epilepscreen.attach(v, { liveDetect: true, paddingSeconds: 0.2 });
