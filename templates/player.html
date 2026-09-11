@@ -42,6 +42,7 @@
         }
         body.light button { color: #fff; }
         body.light .video-item button { color: var(--text-muted); }
+        body.light .presets button { color: var(--text-muted); }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -183,6 +184,70 @@
             color: var(--text-muted);
             margin-top: 4px;
         }
+
+        /* Guard settings: detector toggles + sensitivity sliders */
+        .guard-settings {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            background: var(--bg-input);
+        }
+        .guard-settings h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .guard-note { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+
+        .detector-toggles {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 12px;
+            margin-bottom: 14px;
+        }
+        @media (max-width: 600px) { .detector-toggles { grid-template-columns: 1fr; } }
+        .detector-toggles label {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .detector-toggles small { color: var(--text-muted); font-size: 11px; }
+        .detector-toggles input[type="checkbox"] {
+            width: auto;
+            accent-color: var(--accent);
+            margin: 0;
+        }
+
+        .slider-row { margin-bottom: 10px; }
+        .slider-row .slider-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-size: 13px;
+            margin-bottom: 2px;
+        }
+        .slider-row output { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+        .slider-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+        .slider-row .guide { font-size: 11px; color: var(--text-muted); }
+        .slider-row .guide strong { color: var(--text-primary); font-weight: 600; }
+
+        .presets { display: flex; gap: 8px; margin-top: 12px; }
+        .presets button {
+            width: auto;
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 12px;
+            font-family: var(--font-mono);
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .presets button:hover { color: var(--accent); border-color: var(--accent); }
 
         .foot {
             width: 100%;
@@ -503,6 +568,38 @@
             </video>
         </div>
         <p class="stage-note">Pick a video from the library. Hazard moments are dimmed automatically while it plays.</p>
+
+        <div class="guard-settings">
+            <h3>Guard settings</h3>
+            <p class="guard-note">Detection runs in Python. Toggles filter instantly; moving a slider re-analyzes the video.</p>
+            <div class="detector-toggles">
+                <label><input type="checkbox" data-kind="flicker" checked> Luminance flicker <small>brightness strobing</small></label>
+                <label><input type="checkbox" data-kind="red_flash" checked> Red flash <small>saturated red bursts</small></label>
+                <label><input type="checkbox" data-kind="color_transition" checked> Color shifts <small>large hue jumps</small></label>
+                <label><input type="checkbox" data-kind="spatial_pattern" checked> Spatial patterns <small>stripes / checks</small></label>
+                <label><input type="checkbox" data-kind="pattern_movement" checked> Pattern movement <small>oscillating patterns</small></label>
+            </div>
+            <div class="slider-row">
+                <div class="slider-head"><label for="flashLimit">Flashes per second (max)</label><output id="flashLimitVal" for="flashLimit">3 / sec</output></div>
+                <input type="range" id="flashLimit" min="1" max="6" step="1" value="3">
+                <div class="guide"><strong>3</strong> = broadcast limit (Ofcom / WCAG 2.3: no more than 3 flashes in any second). Lower is stricter.</div>
+            </div>
+            <div class="slider-row">
+                <div class="slider-head"><label for="flashDelta">Brightness jump</label><output id="flashDeltaVal" for="flashDelta">40 units</output></div>
+                <input type="range" id="flashDelta" min="10" max="100" step="5" value="40">
+                <div class="guide">Luminance change (0&ndash;255) counted as one flash. Broadcast practice flags large jumps (Harding test &asymp; 20 cd/m&sup2;).</div>
+            </div>
+            <div class="slider-row">
+                <div class="slider-head"><label for="redFloor">Red screen area</label><output id="redFloorVal" for="redFloor">25%</output></div>
+                <input type="range" id="redFloor" min="5" max="50" step="5" value="25">
+                <div class="guide"><strong>25%</strong> = WCAG general-flash area rule. Share of the frame that must be saturated red.</div>
+            </div>
+            <div class="presets">
+                <button type="button" data-preset="broadcast">Broadcast</button>
+                <button type="button" data-preset="sensitive">Sensitive</button>
+                <button type="button" data-preset="lenient">Lenient</button>
+            </div>
+        </div>
         </div>
 
         <aside class="side">
@@ -584,11 +681,110 @@
         }
 
         // Server-side analysis call (detection itself runs in Python).
+        // params is e.g. {flash_limit: 3, flash_delta: 40, red_floor: 0.25}.
         // Returns the parsed risk profile JSON.
-        async function runAnalysis(path) {
-            const res = await fetch(path.replace('/stream/', '/analyze/'));
+        async function runAnalysis(path, params) {
+            var url = path.replace('/stream/', '/analyze/');
+            if (params) {
+                var qs = Object.keys(params).map(function(k) {
+                    return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+                }).join('&');
+                url += (url.indexOf('?') === -1 ? '?' : '&') + qs;
+            }
+            const res = await fetch(url);
             return res.json();
         }
+
+        // Detector toggles: filter the stored events client-side, no
+        // re-analysis needed. attachGuard always applies the current filter.
+        var currentHash = null;
+        var currentKind = null;
+
+        function enabledKinds() {
+            var kinds = [];
+            document.querySelectorAll('.detector-toggles input[type="checkbox"]').forEach(function(box) {
+                if (box.checked) kinds.push(box.dataset.kind);
+            });
+            return kinds;
+        }
+
+        function attachGuard() {
+            var hash = currentHash;
+            var kinds = enabledKinds();
+            return window.Epilepscreen.attach(video, {
+                fetchEvents: function() {
+                    return fetch('/events/' + hash + '/').then(function(res) {
+                        return res.json();
+                    }).then(function(data) {
+                        return (data.events || []).filter(function(e) {
+                            return kinds.indexOf(e.kind) !== -1;
+                        });
+                    });
+                },
+                paddingSeconds: 0.2,
+            });
+        }
+
+        // Sensitivity sliders: real numbers, re-analyze on change.
+        function sensitivityFromSliders() {
+            return {
+                flash_limit: parseInt(document.getElementById('flashLimit').value, 10),
+                flash_delta: parseFloat(document.getElementById('flashDelta').value),
+                red_floor: parseInt(document.getElementById('redFloor').value, 10) / 100,
+            };
+        }
+
+        function updateReadouts() {
+            var s = sensitivityFromSliders();
+            document.getElementById('flashLimitVal').textContent = s.flash_limit + ' / sec';
+            document.getElementById('flashDeltaVal').textContent = s.flash_delta + ' units';
+            document.getElementById('redFloorVal').textContent = Math.round(s.red_floor * 100) + '%';
+        }
+
+        var sensTimer = null;
+        function scheduleReanalyze() {
+            updateReadouts();
+            if (!currentHash || currentKind === 'audio') return;
+            if (sensTimer) clearTimeout(sensTimer);
+            sensTimer = setTimeout(function() {
+                showToast('Re-analyzing with new sensitivity...', 'info');
+                runAnalysis('/stream/' + currentHash + '/', sensitivityFromSliders()).then(function() {
+                    if (guard) guard.detach();
+                    guard = attachGuard();
+                    showToast('Guard updated.', 'success');
+                }).catch(function(err) {
+                    showToast('Re-analysis failed: ' + err.message, 'error');
+                });
+            }, 700);
+        }
+
+        document.querySelectorAll('.guard-settings input[type="range"]').forEach(function(slider) {
+            slider.addEventListener('input', scheduleReanalyze);
+        });
+
+        document.querySelectorAll('.detector-toggles input[type="checkbox"]').forEach(function(box) {
+            box.addEventListener('change', function() {
+                if (!currentHash) return;
+                if (guard) guard.detach();
+                guard = attachGuard();
+            });
+        });
+
+        var PRESETS = {
+            broadcast: { flashLimit: 3, flashDelta: 40, redFloor: 25 },
+            sensitive: { flashLimit: 2, flashDelta: 25, redFloor: 15 },
+            lenient: { flashLimit: 5, flashDelta: 60, redFloor: 40 },
+        };
+        document.querySelectorAll('.presets button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var p = PRESETS[btn.dataset.preset];
+                document.getElementById('flashLimit').value = p.flashLimit;
+                document.getElementById('flashDelta').value = p.flashDelta;
+                document.getElementById('redFloor').value = p.redFloor;
+                scheduleReanalyze();
+            });
+        });
+        updateReadouts();
 
         async function playVideo(path, analyzed, kind) {
             source.src = path;
@@ -606,12 +802,8 @@
                 });
             }
             const hash = path.split('/').filter(Boolean)[1];
-            const attachGuard = function() {
-                return window.Epilepscreen.attach(video, {
-                    eventsUrl: '/events/' + hash + '/',
-                    paddingSeconds: 0.2,
-                });
-            };
+            currentHash = hash;
+            currentKind = kind;
             if (guard) guard.detach();
             guard = attachGuard();
             // Audio carries no visual triggers, so there is nothing to analyze.
@@ -625,7 +817,7 @@
             if (!analyzed) {
                 showToast('First play: analyzing video for triggers...', 'info');
                 try {
-                    await runAnalysis(path);
+                    await runAnalysis(path, sensitivityFromSliders());
                     guard.detach();
                     guard = attachGuard();
                     showToast('Analysis complete. Guard is active.', 'success');
@@ -661,7 +853,7 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Analyzing...';
             try {
-                const data = await runAnalysis(path);
+                const data = await runAnalysis(path, sensitivityFromSliders());
                 if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
                 if (data.is_safe) { showToast('Safe: no photosensitive triggers detected.', 'success'); return; }
                 const summary = data.events
