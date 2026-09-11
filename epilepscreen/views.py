@@ -215,8 +215,44 @@ def upload_video(request):
     return redirect('index')
 
 
+# Sensitivity ranges accepted by the analyze endpoint. Defaults match
+# photosensitive/config.py; the 3-flashes/sec and 25%-of-screen marks
+# follow the Ofcom/WCAG broadcast guidance for photosensitive content.
+SENSITIVITY_BOUNDS = {
+    "flash_limit": (1, 10, 3),
+    "flash_delta": (5.0, 150.0, 40.0),
+    "red_floor": (0.01, 1.0, 0.25),
+}
+
+
+def sensitivity_cfg(request):
+    """Build an analyzer cfg dict from request query params.
+
+    Out-of-range or non-numeric values fall back to the default, so a
+    bad slider value can never break analysis.
+    """
+    cfg = {}
+    for key, (low, high, default) in SENSITIVITY_BOUNDS.items():
+        raw = request.GET.get(key)
+        try:
+            val = float(raw) if raw is not None else default
+        except (TypeError, ValueError):
+            val = default
+        if not (low <= val <= high):
+            val = default
+        cfg[key] = int(val) if key == "flash_limit" else val
+    return cfg
+
+
 def analyze_video(request, video_hash):
-    """Analyze a stored video, persist hazard events, and return JSON."""
+    """Analyze a stored video, persist hazard events, and return JSON.
+
+    Optional sensitivity overrides as query params (invalid values fall
+    back to defaults):
+      flash_limit = max flashes per second before flicker is flagged (1-10)
+      flash_delta = brightness jump (0-255 units) counted as a flash (5-150)
+      red_floor   = fraction of screen that must be saturated red (0.01-1.0)
+    """
     cnx = None
     try:
         cnx = get_db_connection()
@@ -248,7 +284,7 @@ def analyze_video(request, video_hash):
         tmp.write(video_data)
         tmp_path = tmp.name
     try:
-        profile = analyze_video_file(tmp_path)
+        profile = analyze_video_file(tmp_path, cfg=sensitivity_cfg(request))
         # Auto-fill a missing category from the footage itself.
         if not category:
             info = probe_media(tmp_path) or {}
@@ -268,6 +304,7 @@ def analyze_video(request, video_hash):
         "hash": video_hash,
         "is_safe": profile.is_safe,
         "risk_flags": profile.risk_flags,
+        "sensitivity": sensitivity_cfg(request),
         "events": [
             {"kind": e.kind, "start": e.start_time, "end": e.end_time,
              "attributes": e.attributes}

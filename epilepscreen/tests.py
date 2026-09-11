@@ -66,6 +66,7 @@ class EmbedTests(TestCase):
 
 
 class AnalysisStoreTests(TestCase):
+
     def test_save_analysis_replaces_state_row(self):
         from epilepscreen.analysis_store import save_analysis
         profile = MagicMock()
@@ -123,3 +124,62 @@ class BrowseTests(TestCase):
             self.assertEqual(resp.status_code, 200)
             first_params = mock_cursor.execute.call_args_list[0][0][1]
             self.assertIn("Short", first_params)
+
+
+def _mock_video_db():
+    """Fake mysql connection serving one stored mp4 row."""
+    import lzma
+    mock_cnx = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = {
+        "movie": lzma.compress(b"x" * 64),
+        "content_type": "video/mp4",
+        "category": "Movie",
+        "title": "t",
+    }
+    mock_cnx.cursor.return_value = mock_cursor
+    return mock_cnx
+
+
+def _mock_profile():
+    profile = MagicMock()
+    profile.is_safe = False
+    profile.risk_flags = ["flicker"]
+    profile.events = []
+    return profile
+
+
+class AnalyzeSensitivityTests(TestCase):
+    def test_valid_params_reach_analyzer_and_echo(self):
+        with patch("epilepscreen.views.get_db_connection",
+                   return_value=_mock_video_db()), \
+             patch("epilepscreen.views.analyze_video_file",
+                   return_value=_mock_profile()) as mock_analyze, \
+             patch("epilepscreen.views.save_events"), \
+             patch("epilepscreen.views.save_analysis"), \
+             patch("epilepscreen.views._set_category"):
+            resp = self.client.get(
+                "/analyze/1/?flash_limit=2&flash_delta=25&red_floor=0.15")
+            self.assertEqual(resp.status_code, 200)
+            cfg = mock_analyze.call_args[1]["cfg"]
+            self.assertEqual(
+                cfg, {"flash_limit": 2, "flash_delta": 25.0,
+                      "red_floor": 0.15})
+            data = resp.json()
+            self.assertEqual(data["sensitivity"], cfg)
+
+    def test_bad_params_fall_back_to_defaults(self):
+        with patch("epilepscreen.views.get_db_connection",
+                   return_value=_mock_video_db()), \
+             patch("epilepscreen.views.analyze_video_file",
+                   return_value=_mock_profile()) as mock_analyze, \
+             patch("epilepscreen.views.save_events"), \
+             patch("epilepscreen.views.save_analysis"), \
+             patch("epilepscreen.views._set_category"):
+            resp = self.client.get(
+                "/analyze/1/?flash_limit=999&flash_delta=nope")
+            self.assertEqual(resp.status_code, 200)
+            cfg = mock_analyze.call_args[1]["cfg"]
+            self.assertEqual(
+                cfg, {"flash_limit": 3, "flash_delta": 40.0,
+                      "red_floor": 0.25})
