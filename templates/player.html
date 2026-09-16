@@ -1,908 +1,285 @@
-{% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Epilepscreen</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-deep: #0a0a0f;
-            --bg-card: #13131a;
-            --bg-input: #1a1a24;
-            --text-primary: #e8e6f0;
-            --text-muted: #8a879a;
-            --accent: #00e5a0;
-            --accent-dim: rgba(0, 229, 160, 0.12);
-            --danger: #ff4d6a;
-            --danger-dim: rgba(255, 77, 106, 0.12);
-            --border: #2a2a36;
-            --radius: 10px;
-            --font-body: 'Space Grotesk', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} - Epilepscreen Player</title>
+<style>
+:root {
+--bg-primary: #000000;
+--bg-secondary: #141414;
+--bg-hover: #1f1f1f;
+--text-primary: #ffffff;
+--text-secondary: #a3a3a3;
+--accent: #e50914;
+--accent-hover: #f40612;
+--border: #333333;
 
-        /* Light theme (header toggle). All ratios re-checked at 4.5:1+. */
-        body.light {
-            --bg-deep: #eef0f3;
-            --bg-card: #ffffff;
-            --bg-input: #e9ebef;
-            --text-primary: #16161c;
-            --text-muted: #5a5a68;
-            --accent: #007a55;
-            --accent-dim: rgba(0, 122, 85, 0.12);
-            --danger: #c21030;
-            --danger-dim: rgba(194, 16, 48, 0.10);
-            --border: #d5d5dc;
-            background-image:
-                radial-gradient(ellipse 600px 400px at 20% 10%, rgba(0,122,85,0.06), transparent),
-                radial-gradient(ellipse 500px 300px at 80% 80%, rgba(194,16,48,0.05), transparent);
-        }
-        body.light button { color: #fff; }
-        body.light .video-item button { color: var(--text-muted); }
-        body.light .presets button { color: var(--text-muted); }
+* { box-sizing: border-box; }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+background: var(--bg-primary);
+color: var(--text-primary);
+font-family: 'Helvetica Neue', Arial, sans-serif;
+margin: 0;
+padding: 0;
+}
 
-        .sr-only {
-            position: absolute;
-            width: 1px; height: 1px;
-            padding: 0; margin: -1px;
-            overflow: hidden;
-            clip: rect(0 0 0 0);
-            white-space: nowrap;
-            border: 0;
-        }
+/* Header */
+.header {
+position: fixed;
+top: 0; left: 0; right: 0;
+background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0) 100%);
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 20px 4%;
+backdrop-filter: blur(10px);
+z-index: 1000;
+}
 
-        .skip-link {
-            position: absolute;
-            left: -999px; top: 0;
-            background: var(--accent);
-            color: #000;
-            padding: 8px 14px;
-            z-index: 10000;
-            border-radius: 0 0 6px 0;
-            font-weight: 600;
-            font-size: 13px;
-            text-decoration: none;
-        }
-        .skip-link:focus { left: 0; }
+.logo {
+font-size: 28px;
+font-weight: bold;
+color: var(--accent);
+text-decoration: none;
+}
 
-        a:focus-visible, button:focus-visible, input:focus-visible,
-        select:focus-visible, [tabindex]:focus-visible {
-            outline: 2px solid var(--accent);
-            outline-offset: 2px;
-        }
-        .video-item:focus-visible { border-color: var(--accent); }
+/* Back to browse button */
+.back-btn {
+background: transparent;
+color: var(--text-secondary);
+border: 1px solid var(--border);
+padding: 8px 16px;
+border-radius: 4px;
+cursor: pointer;
+font-size: 14px;
+transition: all 0.2s;
+}
 
-        body {
-            font-family: var(--font-body);
-            background: var(--bg-deep);
-            color: var(--text-primary);
-            min-height: 100vh;
-            padding: 24px 16px 40px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-image:
-                radial-gradient(ellipse 600px 400px at 20% 10%, rgba(0,229,160,0.04), transparent),
-                radial-gradient(ellipse 500px 300px at 80% 80%, rgba(255,77,106,0.03), transparent);
-        }
+.back-btn:hover {
+background: var(--bg-hover);
+color: var(--text-primary);
+}
 
-        h1, h2, h3 { font-weight: 700; letter-spacing: -0.02em; }
+/* Main player container */
+.player-container {
+max-width: 1200px;
+margin: 100px auto 0;
+padding: 24px;
+}
 
-        #brand {
-            width: 100%;
-            max-width: 1080px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
+/* Video info section */
+.video-info {
+display: flex;
+gap: 24px;
+margin-bottom: 20px;
+}
 
-        .brand-mark {
-            width: 14px; height: 14px;
-            background: var(--accent);
-            transform: rotate(45deg);
-            border-radius: 3px;
-            flex-shrink: 0;
-        }
+/* Video player frame */
+.video-frame {
+background: #000;
+border-radius: 8px;
+overflow: hidden;
+flex: 1;
+min-width: 0;
+}
 
-        #brand h1 { font-size: 1.4rem; }
-        #brand p {
-            font-size: 12px;
-            color: var(--text-muted);
-            font-family: var(--font-mono);
-            margin-top: 2px;
-        }
+.video-frame iframe,
+.video-frame video,
+.video-frame audio {
+width: 100%;
+height: auto;
+min-height: 400px;
+}
 
-        .brand-text { flex: 1; }
+/* Title and metadata */
+.video-title {
+font-size: 28px;
+font-weight: bold;
+margin: 0 0 8px;
+}
 
-        .tabs { display: flex; gap: 6px; }
-        .tabs a {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 13px;
-            font-family: var(--font-mono);
-            padding: 6px 12px;
-            border-radius: 6px;
-            border: 1px solid transparent;
-        }
-        .tabs a:hover { color: var(--text-primary); }
-        .tabs a.active { color: var(--accent); border-color: var(--border); background: var(--bg-card); }
+.video-meta {
+font-size: 14px;
+color: var(--text-secondary);
+display: flex;
+gap: 16px;
+}
 
-        #light {
-            background: var(--bg-input);
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-            padding: 6px 10px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            width: auto;
-            font-family: var(--font-mono);
-        }
-        #light:hover { color: var(--accent); border-color: var(--accent); }
+.meta-item {
+display: flex;
+gap: 4px;
+}
 
-        .container {
-            width: 100%;
-            max-width: 1080px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            padding: 28px;
-            border-radius: var(--radius);
-            animation: fadeUp 0.4s ease-out;
-        }
+/* Action buttons */
+.actions {
+display: flex;
+gap: 12px;
+}
 
-        .hazard-bar {
-            height: 8px;
-            margin: -28px -28px 22px;
-            border-radius: 10px 10px 0 0;
-            background: repeating-linear-gradient(-45deg, var(--accent) 0 10px, transparent 10px 20px);
-            opacity: 0.6;
-        }
+.action-btn {
+background: var(--bg-hover);
+color: var(--text-primary);
+border: none;
+padding: 10px 16px;
+border-radius: 6px;
+cursor: pointer;
+font-size: 14px;
+font-weight: 600;
+transition: background 0.2s;
+}
 
-        .layout {
-            display: flex;
-            gap: 28px;
-            align-items: flex-start;
-        }
+.action-btn:hover {
+background: var(--border);
+}
 
-        .stage { flex: 1.55; min-width: 0; }
-        .side { flex: 1; min-width: 0; }
+.action-btn.primary {
+background: var(--accent);
+color: white;
+}
 
-        .side .upload-section {
-            border-top: none;
-            margin-top: 0;
-            padding-top: 0;
-        }
+.action-btn.primary:hover {
+background: var(--accent-hover);
+}
 
-        .stage-note {
-            font-size: 13px;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
+/* Hazard events overlay */
+.hazards-list {
+background: var(--bg-secondary);
+border-radius: 8px;
+padding: 16px;
+margin-top: 20px;
+}
 
-        /* Guard settings: detector toggles + sensitivity sliders */
-        .guard-settings {
-            margin-top: 16px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            background: var(--bg-input);
-        }
-        .guard-settings h3 {
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-        .guard-note { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.hazard-item {
+background: var(--bg-hover);
+border-radius: 6px;
+padding: 12px;
+margin-bottom: 10px;
+padding: 12px;
+}
 
-        .detector-toggles {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px 12px;
-            margin-bottom: 14px;
-        }
-        @media (max-width: 600px) { .detector-toggles { grid-template-columns: 1fr; } }
-        .detector-toggles label {
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
-            font-size: 13px;
-            cursor: pointer;
-        }
-        .detector-toggles small { color: var(--text-muted); font-size: 11px; }
-        .detector-toggles input[type="checkbox"] {
-            width: auto;
-            accent-color: var(--accent);
-            margin: 0;
-        }
+.hazard-item:last-child { margin-bottom: 0; }
 
-        .slider-row { margin-bottom: 10px; }
-        .slider-row .slider-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            font-size: 13px;
-            margin-bottom: 2px;
-        }
-        .slider-row output { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
-        .slider-row input[type="range"] { width: 100%; accent-color: var(--accent); }
-        .slider-row .guide { font-size: 11px; color: var(--text-muted); }
-        .slider-row .guide strong { color: var(--text-primary); font-weight: 600; }
+.hazard-time {
+color: var(--accent);
+font-size: 12px;
+font-weight: 600;
+margin-bottom: 4px;
+}
 
-        .presets { display: flex; gap: 8px; margin-top: 12px; }
-        .presets button {
-            width: auto;
-            flex: 1;
-            padding: 6px 8px;
-            font-size: 12px;
-            font-family: var(--font-mono);
-            background: transparent;
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-        }
-        .presets button:hover { color: var(--accent); border-color: var(--accent); }
+.hazard-desc {
+font-size: 13px;
+color: var(--text-secondary);
+}
 
-        .foot {
-            width: 100%;
-            max-width: 1080px;
-            margin-top: 20px;
-            font-size: 12px;
-            font-family: var(--font-mono);
-            color: var(--text-muted);
-            text-align: center;
-        }
+/* Store link */
+.store-link {
+display: inline-block;
+background: var(--accent);
+color: white;
+padding: 10px 20px;
+border-radius: 6px;
+text-decoration: none;
+font-size: 14px;
+font-weight: 600;
+margin-top: 16px;
+}
 
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+.store-link:hover {
+background: var(--accent-hover);
+}
 
-        @keyframes fadeUpItem {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+/* Loading state */
+.loading {
+display: flex;
+align-items: center;
+justify-content: center;
+height: 400px;
+color: var(--text-secondary);
+}
 
-        .container > h2 {
-            font-size: 1.3rem;
-            margin-bottom: 18px;
-        }
-
-        /* Video Container */
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            padding-top: 56.25%;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-            margin-bottom: 24px;
-            border: 1px solid var(--border);
-        }
-
-        /* Portrait mode for shorts / vertical video (9:16) */
-        .video-wrapper.portrait {
-            padding-top: 0;
-            height: min(68vh, 620px);
-            max-width: 360px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .format-tag {
-            position: absolute;
-            top: 10px; left: 10px;
-            background: rgba(0,0,0,0.75);
-            color: var(--text-muted);
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-family: var(--font-mono);
-            z-index: 10;
-            border: 1px solid var(--border);
-            letter-spacing: 0.03em;
-            display: none;
-        }
-
-        video {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: contain;
-            transition: filter 0.3s ease;
-            visibility: hidden; /* shown once a source is set, hides the empty-video throbber */
-        }
-
-        /* Upload Form */
-        .upload-section {
-            border-top: 1px solid var(--border);
-            padding-top: 20px;
-            margin-top: 24px;
-        }
-
-        .upload-section h3 {
-            font-size: 0.95rem;
-            color: var(--text-muted);
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            font-weight: 500;
-        }
-
-        input[type="text"], input[type="file"] {
-            padding: 10px 12px;
-            margin-bottom: 10px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            color: var(--text-primary);
-            border-radius: 6px;
-            width: 100%;
-            font-family: var(--font-body);
-            font-size: 14px;
-            transition: border-color 0.2s;
-        }
-        input:focus { outline: none; border-color: var(--accent); }
-
-        button {
-            background: var(--accent);
-            color: #000;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-family: var(--font-body);
-            font-size: 14px;
-            width: 100%;
-            transition: opacity 0.15s, transform 0.1s;
-        }
-        button:hover { opacity: 0.88; }
-        button:active { transform: scale(0.98); }
-        button:disabled {
-            background: var(--border);
-            color: var(--text-muted);
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        /* Spinner */
-        .spinner {
-            display: inline-block;
-            width: 14px; height: 14px;
-            border: 2px solid currentColor;
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-            vertical-align: middle;
-            margin-right: 6px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Video loading overlay */
-        .video-loading {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 5;
-            color: var(--accent);
-            font-size: 13px;
-            font-family: var(--font-mono);
-        }
-        .video-loading .spinner {
-            width: 20px; height: 20px;
-            border-color: var(--accent);
-            border-top-color: transparent;
-            margin-right: 10px;
-        }
-
-        /* Placeholder shown until a video is chosen (hides the
-           browser's empty-video throbber, which looks broken) */
-        .no-video {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 0 24px;
-            color: var(--text-muted);
-            font-size: 14px;
-            z-index: 4;
-            pointer-events: none;
-        }
-
-        /* Toast notification */
-        .toast {
-            position: fixed;
-            bottom: 20px; right: 20px;
-            padding: 12px 18px;
-            border-radius: 8px;
-            color: #fff;
-            font-size: 13px;
-            font-family: var(--font-mono);
-            z-index: 9999;
-            opacity: 0;
-            transform: translateY(10px);
-            transition: opacity 0.25s, transform 0.25s;
-            max-width: 380px;
-        }
-        .toast.show { opacity: 1; transform: translateY(0); }
-        .toast-success { background: #0d7a4f; }
-        .toast-error { background: #991d33; }
-        .toast-info { background: #1a4a8a; }
-
-        /* Video List */
-        .section-label {
-            font-size: 0.95rem;
-            color: var(--text-muted);
-            margin-top: 24px;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            font-weight: 500;
-        }
-
-        .video-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .video-item {
-            background: var(--bg-input);
-            margin-bottom: 8px;
-            padding: 12px 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid transparent;
-            transition: border-color 0.15s, background 0.15s;
-            animation: fadeUpItem 0.3s ease-out both;
-        }
-        .video-item:nth-child(1) { animation-delay: 0.05s; }
-        .video-item:nth-child(2) { animation-delay: 0.1s; }
-        .video-item:nth-child(3) { animation-delay: 0.15s; }
-        .video-item:nth-child(4) { animation-delay: 0.2s; }
-        .video-item:nth-child(5) { animation-delay: 0.25s; }
-        .video-item:hover { border-color: var(--border); background: #1f1f2a; }
-
-        .video-item span { font-weight: 600; font-size: 14px; }
-        .video-item small { color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
-
-        .needs-analysis {
-            font-style: normal;
-            font-size: 10px;
-            font-family: var(--font-mono);
-            color: var(--danger);
-            border: 1px solid var(--danger);
-            border-radius: 4px;
-            padding: 1px 6px;
-            margin-left: 6px;
-            letter-spacing: 0.04em;
-        }
-
-        .cat-chip {
-            font-size: 10px;
-            font-family: var(--font-mono);
-            color: var(--accent);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 1px 6px;
-            margin-left: 6px;
-            letter-spacing: 0.04em;
-        }
-
-        .video-item button {
-            width: auto;
-            padding: 5px 12px;
-            font-size: 12px;
-            background: var(--bg-card);
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-            font-family: var(--font-mono);
-        }
-        .video-item button:hover { color: var(--accent); border-color: var(--accent); }
-
-        .empty-msg {
-            color: var(--text-muted);
-            font-size: 14px;
-            padding: 20px;
-            text-align: center;
-        }
-
-        @media (max-width: 600px) {
-            body { padding: 12px 8px 32px; }
-            .container { padding: 18px 14px; }
-            #brand h1 { font-size: 1.1rem; }
-            .video-item { flex-wrap: wrap; gap: 6px; }
-            .hazard-bar { margin: -18px -14px 18px; }
-        }
-
-        @media (max-width: 820px) {
-            .layout { flex-direction: column; }
-            .stage, .side { width: 100%; }
-            .side .upload-section { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 20px; }
-        }
-    </style>
+/* Mobile responsive */
+@media (max-width: 768px) {
+.header { flex-direction: column;
+gap: 12px; }
+.video-info { flex-direction: column;
+}
+}
+</style>
 </head>
 <body>
-    <a class="skip-link" href="#mainPlayer">Skip to video player</a>
-    <header id="brand">
-        <div class="brand-mark"></div>
-        <div class="brand-text">
-            <h1>epilepscreen</h1>
-            <p>photosensitive-safe video, anywhere</p>
-        </div>
-        <nav class="tabs">
-            <a href="/" class="active">Player</a>
-            <a href="/browse/">Browse</a>
-        </nav>
-        <button id="light" aria-label="Toggle light theme">&#9681;</button>
-    </header>
-    <div class="container">
-        <div class="hazard-bar"></div>
-        <div class="layout">
-        <div class="stage">
-        <h2>SafeView Player</h2>
 
-        <div class="video-wrapper">
-            <div id="noVideo" class="no-video">Pick a video from the library to start watching</div>
-            <div id="videoLoading" class="video-loading" style="display:none;">
-                <div class="spinner"></div>Loading video...
-            </div>
-            <div id="formatTag" class="format-tag">16:9</div>
-            <video id="mainPlayer" controls crossorigin="anonymous" aria-label="Video player">
-                <source src="" type="video/mp4" id="videoSource">
-                Your browser does not support the video tag.
-            </video>
-        </div>
-        <p class="stage-note">Pick a video from the library. Hazard moments are dimmed automatically while it plays.</p>
+<div class="header">
+<a href="/" class="logo">epilepscreen</a>
+<button class="back-btn" onclick="window.history.back()">Back</button>
+</div>
 
-        <div class="guard-settings">
-            <h3>Guard settings</h3>
-            <p class="guard-note">Detection runs in Python. Toggles filter instantly; moving a slider re-analyzes the video.</p>
-            <div class="detector-toggles">
-                <label><input type="checkbox" data-kind="flicker" checked> Luminance flicker <small>brightness strobing</small></label>
-                <label><input type="checkbox" data-kind="red_flash" checked> Red flash <small>saturated red bursts</small></label>
-                <label><input type="checkbox" data-kind="color_transition" checked> Color shifts <small>large hue jumps</small></label>
-                <label><input type="checkbox" data-kind="spatial_pattern" checked> Spatial patterns <small>stripes / checks</small></label>
-                <label><input type="checkbox" data-kind="pattern_movement" checked> Pattern movement <small>oscillating patterns</small></label>
-            </div>
-            <div class="slider-row">
-                <div class="slider-head"><label for="flashLimit">Flashes per second (max)</label><output id="flashLimitVal" for="flashLimit">3 / sec</output></div>
-                <input type="range" id="flashLimit" min="1" max="6" step="1" value="3">
-                <div class="guide"><strong>3</strong> = broadcast limit (Ofcom / WCAG 2.3: no more than 3 flashes in any second). Lower is stricter.</div>
-            </div>
-            <div class="slider-row">
-                <div class="slider-head"><label for="flashDelta">Brightness jump</label><output id="flashDeltaVal" for="flashDelta">40 units</output></div>
-                <input type="range" id="flashDelta" min="10" max="100" step="5" value="40">
-                <div class="guide">Luminance change (0&ndash;255) counted as one flash. Broadcast practice flags large jumps (Harding test &asymp; 20 cd/m&sup2;).</div>
-            </div>
-            <div class="slider-row">
-                <div class="slider-head"><label for="redFloor">Red screen area</label><output id="redFloorVal" for="redFloor">25%</output></div>
-                <input type="range" id="redFloor" min="5" max="50" step="5" value="25">
-                <div class="guide"><strong>25%</strong> = WCAG general-flash area rule. Share of the frame that must be saturated red.</div>
-            </div>
-            <div class="presets">
-                <button type="button" data-preset="broadcast">Broadcast</button>
-                <button type="button" data-preset="sensitive">Sensitive</button>
-                <button type="button" data-preset="lenient">Lenient</button>
-            </div>
-        </div>
-        </div>
+<div class="player-container">
 
-        <aside class="side">
-        <div class="upload-section">
-            <h3>Upload New Video</h3>
-            <form id="uploadForm" action="/upload/" method="POST" enctype="multipart/form-data">
-                {% csrf_token %}
-                <label class="sr-only" for="titleInput">Video title</label>
-                <input id="titleInput" type="text" name="title" placeholder="Video Title" required>
-                <label class="sr-only" for="catInput">Category</label>
-                <input id="catInput" type="text" name="category" list="catlist" placeholder="Category (optional: Short, Movie, Music Video, Music...)">
-                <datalist id="catlist">
-                    <option value="Short"></option>
-                    <option value="Movie"></option>
-                    <option value="Music Video"></option>
-                    <option value="Music"></option>
-                    <option value="Other"></option>
-                </datalist>
-                <label class="sr-only" for="fileInput">Video or audio file</label>
-                <input id="fileInput" type="file" name="video_file" accept="video/*,audio/*" required>
-                <button type="submit" id="uploadBtn">Upload to Database</button>
-            </form>
-        </div>
+<!-- Video info -->
+<h1 class="video-title">{{ title }}</h1>
 
-        <h3 class="section-label">Library</h3>
-        <ul class="video-list">
-            {% for video in videos %}
-            <li class="video-item" tabindex="0" role="button" aria-label="Play {{ video.title }}" data-path="{{ video.file_path }}" data-analyzed="{{ video.analyzed|yesno:'true,false' }}" data-kind="{{ video.kind }}" onclick="playVideo('{{ video.file_path }}', {{ video.analyzed|yesno:'true,false' }}, '{{ video.kind }}')">
-                <span>{{ video.title }}{% if not video.analyzed and video.kind != 'audio' %} <em class="needs-analysis">needs analysis</em>{% endif %} <small class="cat-chip">{{ video.category }}</small></span>
-                <small>{{ video.uploaded_at }}</small>
-                <button onclick="event.stopPropagation(); analyzeVideo('{{ video.file_path }}')">Analyze</button>
-                <button onclick="event.stopPropagation(); copyEmbed()">Embed</button>
-            </li>
-            {% empty %}
-            <li class="empty-msg">No videos found. Upload one above.</li>
-            {% endfor %}
-        </ul>
-        </aside>
-        </div>
-    </div>
-    <footer class="foot">Uploads are scanned for strobe, red-flash and pattern triggers. Embed any video on your own site with the Embed button.</footer>
+<!-- Video player -->
+<div class="video-frame" id="video-frame">
+    <div class="loading">Loading video...</div>
+    <iframe id="player" src="{{ stream_url }}" loading="lazy" allow="autoplay; fullscreen" style="display:none;"></iframe>
+</div>
 
-    <script src="{% static 'epilepscreen/epilepscreen.js' %}"></script>
-    <script>
-        const video = document.getElementById('mainPlayer');
-        const source = document.getElementById('videoSource');
+<!-- Actions -->
+<div class="actions">
+<button class="action-btn" onclick="document.getElementById('player').play()">▶ Play</button>
+<button class="action-btn primary" onclick="window.open('{{ store_url }}', '_blank')">🛒 Video Store</button>
+<button class="action-btn" onclick="toggleHazards()">🔔 Hazard Alerts: {{ event_count }}</button>
+</div>
 
-        // Theme toggle (the header button). A stored choice wins,
-        // otherwise the OS light/dark preference decides.
-        (function initTheme() {
-            try {
-                var stored = localStorage.getItem('epilepscreen-theme');
-                var light = stored ? stored === 'light'
-                    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
-                if (light) document.body.classList.add('light');
-            } catch (e) {}
-        })();
-        document.getElementById('light').addEventListener('click', function() {
-            var on = document.body.classList.toggle('light');
-            try { localStorage.setItem('epilepscreen-theme', on ? 'light' : 'dark'); } catch (e) {}
-        });
+<!-- Hazard events display -->
+<div id="hazards-container" class="hazards-list" style="display:none;">
+<h3>⚠️ Hazard Events</h3>
+<!-- Events inserted dynamically -->
+</div>
 
-        // Function to change video source dynamically
-        let guard = null;
-        const videoLoading = document.getElementById('videoLoading');
+<!-- Store link -->
+<a href="{{ store_url }}" class="store-link">🛒 Purchase/Download this video</a>
 
-        function showToast(message, type) {
-            type = type || 'info';
-            const t = document.createElement('div');
-            t.className = 'toast toast-' + type;
-            t.setAttribute('role', 'status');
-            t.textContent = message;
-            document.body.appendChild(t);
-            requestAnimationFrame(function() { t.classList.add('show'); });
-            setTimeout(function() {
-                t.classList.remove('show');
-                setTimeout(function() { t.remove(); }, 300);
-            }, 4000);
-        }
+</div>
+<script>
+let hazardsEnabled = true;
 
-        // Server-side analysis call (detection itself runs in Python).
-        // params is e.g. {flash_limit: 3, flash_delta: 40, red_floor: 0.25}.
-        // Returns the parsed risk profile JSON.
-        async function runAnalysis(path, params) {
-            var url = path.replace('/stream/', '/analyze/');
-            if (params) {
-                var qs = Object.keys(params).map(function(k) {
-                    return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-                }).join('&');
-                url += (url.indexOf('?') === -1 ? '?' : '&') + qs;
-            }
-            const res = await fetch(url);
-            return res.json();
-        }
+function toggleHazards() {
+const container = document.getElementById('hazards-container');
+const currentEvents = document.querySelectorAll('.hazard-item');
 
-        // Detector toggles: filter the stored events client-side, no
-        // re-analysis needed. attachGuard always applies the current filter.
-        var currentHash = null;
-        var currentKind = null;
+if (hazardsEnabled) {
+container.style.display = container.style.display === 'none' ? 'block' : 'block';
+} else {
+container.style.display = 'none';
+}
+hazardsEnabled = !hazardsEnabled;
 
-        function enabledKinds() {
-            var kinds = [];
-            document.querySelectorAll('.detector-toggles input[type="checkbox"]').forEach(function(box) {
-                if (box.checked) kinds.push(box.dataset.kind);
-            });
-            return kinds;
-        }
+// Update button text
+const btn = document.querySelector('.actions button:last-child');
+btn.innerHTML = hazardsEnabled 
+    ? '🔔 Hazard Alerts: {{ event_count }}' 
+    : '🔕 Hide Hazard Alerts';
+}
 
-        function attachGuard() {
-            var hash = currentHash;
-            var kinds = enabledKinds();
-            return window.Epilepscreen.attach(video, {
-                fetchEvents: function() {
-                    return fetch('/events/' + hash + '/').then(function(res) {
-                        return res.json();
-                    }).then(function(data) {
-                        return (data.events || []).filter(function(e) {
-                            return kinds.indexOf(e.kind) !== -1;
-                        });
-                    });
-                },
-                paddingSeconds: 0.2,
-            });
-        }
+// Fetch hazard events if available
+fetch('{{ events_url }}').then(res => res.json()).then(data => {
+const container = document.getElementById('hazards-container');
+const { events } = data;
 
-        // Sensitivity sliders: real numbers, re-analyze on change.
-        function sensitivityFromSliders() {
-            return {
-                flash_limit: parseInt(document.getElementById('flashLimit').value, 10),
-                flash_delta: parseFloat(document.getElementById('flashDelta').value),
-                red_floor: parseInt(document.getElementById('redFloor').value, 10) / 100,
-            };
-        }
+// Build hazard HTML
+const html = events.length ? events.map(e => `
+<div class="hazard-item">
+<div class="hazard-time">⏱ ${e.start_time.toFixed(2)}s - ${e.end_time.toFixed(2)}s</div>
+<div class="hazard-desc">👉 ${e.kind}: ${e.attributes ? JSON.stringify(e.attributes) : 'Event detected'}</div>
+</div>`).join('') : '<p style="color:#888;">No hazard events recorded</p>';
 
-        function updateReadouts() {
-            var s = sensitivityFromSliders();
-            document.getElementById('flashLimitVal').textContent = s.flash_limit + ' / sec';
-            document.getElementById('flashDeltaVal').textContent = s.flash_delta + ' units';
-            document.getElementById('redFloorVal').textContent = Math.round(s.red_floor * 100) + '%';
-        }
+container.innerHTML = html;
+container.style.display = 'block';
+});
+</script>
 
-        var sensTimer = null;
-        function scheduleReanalyze() {
-            updateReadouts();
-            if (!currentHash || currentKind === 'audio') return;
-            if (sensTimer) clearTimeout(sensTimer);
-            sensTimer = setTimeout(function() {
-                showToast('Re-analyzing with new sensitivity...', 'info');
-                runAnalysis('/stream/' + currentHash + '/', sensitivityFromSliders()).then(function() {
-                    if (guard) guard.detach();
-                    guard = attachGuard();
-                    showToast('Guard updated.', 'success');
-                }).catch(function(err) {
-                    showToast('Re-analysis failed: ' + err.message, 'error');
-                });
-            }, 700);
-        }
-
-        document.querySelectorAll('.guard-settings input[type="range"]').forEach(function(slider) {
-            slider.addEventListener('input', scheduleReanalyze);
-        });
-
-        document.querySelectorAll('.detector-toggles input[type="checkbox"]').forEach(function(box) {
-            box.addEventListener('change', function() {
-                if (!currentHash) return;
-                if (guard) guard.detach();
-                guard = attachGuard();
-            });
-        });
-
-        var PRESETS = {
-            broadcast: { flashLimit: 3, flashDelta: 40, redFloor: 25 },
-            sensitive: { flashLimit: 2, flashDelta: 25, redFloor: 15 },
-            lenient: { flashLimit: 5, flashDelta: 60, redFloor: 40 },
-        };
-        document.querySelectorAll('.presets button').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                var p = PRESETS[btn.dataset.preset];
-                document.getElementById('flashLimit').value = p.flashLimit;
-                document.getElementById('flashDelta').value = p.flashDelta;
-                document.getElementById('redFloor').value = p.redFloor;
-                scheduleReanalyze();
-            });
-        });
-        updateReadouts();
-
-        async function playVideo(path, analyzed, kind) {
-            source.src = path;
-            video.style.visibility = 'visible';
-            video.load();
-            videoLoading.style.display = 'flex';
-            document.getElementById('noVideo').style.display = 'none';
-            // play() rejects when the browser blocks autoplay without a
-            // user gesture (e.g. arriving via a browse ?play= link).
-            var started = video.play();
-            if (started && started.catch) {
-                started.catch(function() {
-                    videoLoading.style.display = 'none';
-                    showToast('Press play to start the video.', 'info');
-                });
-            }
-            const hash = path.split('/').filter(Boolean)[1];
-            currentHash = hash;
-            currentKind = kind;
-            if (guard) guard.detach();
-            guard = attachGuard();
-            // Audio carries no visual triggers, so there is nothing to analyze.
-            if (kind === 'audio') {
-                document.getElementById('formatTag').textContent = 'AUDIO';
-                document.getElementById('formatTag').style.display = 'block';
-                return;
-            }
-            // First play of an unanalyzed video: run Python analysis now so
-            // the guard has real hazard events, then re-attach to pick them up.
-            if (!analyzed) {
-                showToast('First play: analyzing video for triggers...', 'info');
-                try {
-                    await runAnalysis(path, sensitivityFromSliders());
-                    guard.detach();
-                    guard = attachGuard();
-                    showToast('Analysis complete. Guard is active.', 'success');
-                } catch (err) {
-                    showToast('Analysis failed: ' + err.message, 'error');
-                }
-            }
-        }
-
-        video.addEventListener('loadeddata', function() {
-            videoLoading.style.display = 'none';
-        });
-
-        // Switch between landscape and portrait (shorts) layout
-        video.addEventListener('loadedmetadata', function() {
-            var wrap = document.querySelector('.video-wrapper');
-            var tag = document.getElementById('formatTag');
-            if (video.videoWidth === 0) {
-                wrap.classList.remove('portrait');
-                tag.textContent = 'AUDIO';
-                tag.style.display = 'block';
-                return;
-            }
-            var isPortrait = video.videoHeight > video.videoWidth;
-            wrap.classList.toggle('portrait', isPortrait);
-            tag.textContent = isPortrait ? '9:16 SHORT' : '16:9';
-            tag.style.display = 'block';
-        });
-
-        async function analyzeVideo(path) {
-            const btn = event.target;
-            const originalText = btn.textContent;
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span>Analyzing...';
-            try {
-                const data = await runAnalysis(path, sensitivityFromSliders());
-                if (data.error) { showToast('Error: ' + data.error, 'error'); return; }
-                if (data.is_safe) { showToast('Safe: no photosensitive triggers detected.', 'success'); return; }
-                const summary = data.events
-                    .map(e => e.start.toFixed(1) + 's-' + e.end.toFixed(1) + 's ' + e.kind)
-                    .join('\n');
-                showToast('Risky triggers found! Check console for details.', 'error');
-                console.log('Hazard events:\n' + summary);
-            } catch (err) {
-                showToast('Analysis failed: ' + err.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = originalText;
-            }
-        }
-
-        function copyEmbed() {
-            var snippet = '<script src="' + location.origin
-                + '/static/epilepscreen/epilepscreen.js" data-auto><\/script>';
-            function done() { showToast('Embed code copied to clipboard.', 'success'); }
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(snippet).then(done, function() {
-                    showToast('Copy failed. Snippet: ' + snippet, 'error');
-                });
-            } else {
-                showToast('Copy this snippet: ' + snippet, 'info');
-            }
-        }
-
-        // Upload form loading state
-        document.getElementById('uploadForm').addEventListener('submit', function() {
-            var btn = document.getElementById('uploadBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span>Uploading...';
-        });
-
-        // Keyboard access for library rows (mouse users get onclick).
-        // Only fires when the row itself is focused, not its buttons.
-        document.querySelector('.video-list').addEventListener('keydown', function(e) {
-            var item = e.target.closest ? e.target.closest('.video-item') : null;
-            if (!item || e.target !== item) return;
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            e.preventDefault();
-            playVideo(item.dataset.path, item.dataset.analyzed === 'true', item.dataset.kind);
-        });
-
-        {% if autoplay %}
-        playVideo('{{ autoplay.file_path }}', {{ autoplay.analyzed|yesno:'true,false' }}, '{{ autoplay.kind }}');
-        {% endif %}
-
-    </script>
 </body>
 </html>

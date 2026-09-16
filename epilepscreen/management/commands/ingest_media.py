@@ -5,9 +5,8 @@ Usage:
         [--category "Movie"] [--auto-category] [--analyze]
         [--extensions mp4,mkv,mp3,flac]
 
-Every file gets its own mysql.connector connection (connections are never
-shared between threads). Hashes are content-based, so re-running ingest on
-the same folder skips files that are already stored.
+Every file gets its own database connection. Hashes are content-based,
+so re-running ingest on the same folder skips already stored files.
 """
 import concurrent.futures
 import datetime
