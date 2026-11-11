@@ -5,3 +5,7 @@ db.sqlite3
 node_modules/
 *.log
 .hallmark/
+.venv/
+.pytest_cache/
+qa/
+samples/*.mp4

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-import mysql.connector
+from django.db import IntegrityError
 from django.test import TestCase
 
 from epilepscreen.management.commands.ingest_media import (
@@ -88,7 +88,7 @@ class IngestFileTests(TestCase):
             path = self._write(tmp, "clip.mp4")
             mock_cnx = self._mock_cnx()
             mock_cnx.cursor.return_value.execute.side_effect = \
-                mysql.connector.errors.IntegrityError("Duplicate entry")
+                IntegrityError("Duplicate entry")
             with patch("epilepscreen.views.get_db_connection",
                        return_value=mock_cnx):
                 _hash, _title, status = ingest_file(path)

@@ -1,62 +1,37 @@
-"""Create the legacy raw-SQL tables used for video/blobs and analysis.
-
-Run once against the database configured in .env:
+"""Create the database schema. Run once, before starting the server:
 
     python sql.py
 
-Django's own tables (store products, purchases, auth, sessions) are created
-separately by `python manage.py migrate`.
+This is a thin wrapper around `python manage.py migrate`. It exists because
+earlier versions of the project used this file to run hand-written CREATE TABLE
+statements against MySQL; the schema now lives in migrations, which build the
+same tables on SQLite *or* MySQL (see epilepscreen/migrations/0003_sql_tables.py).
+
+Which database gets used is decided by DB_ENGINE in .env:
+    DB_ENGINE=sqlite  -> db.sqlite3 beside manage.py   (default)
+    DB_ENGINE=mysql   -> the DB_NAME/DB_USER/... target
 """
 import os
-from pathlib import Path
+import sys
 
-import mysql.connector
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().with_name('.env'))
+def main():
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mysite.settings')
+    try:
+        import django
+        django.setup()
+        from django.conf import settings
+        from django.core.management import call_command
+    except ImportError as exc:
+        print(f'Django is not installed: {exc}\nInstall it with: pip install -r requirements.txt')
+        return 1
 
-mydb = mysql.connector.connect(
-  host=os.environ.get('DB_HOST', '127.0.0.1'),
-  user=os.environ.get('DB_USER', 'root'),
-  password=os.environ.get('DB_PASSWORD', ''),
-  database=os.environ.get('DB_NAME', 'darsh'),
-  charset='utf8mb4',
-)
+    engine = settings.DATABASES['default']['ENGINE'].rsplit('.', 1)[-1]
+    print(f'Creating tables for the {engine} database...')
+    call_command('migrate', interactive=False)
+    print('Done. Next: python manage.py runserver')
+    return 0
 
-mycursor = mydb.cursor()
-query = """CREATE TABLE IF NOT EXISTS epilepsy (
-  hash BIGINT UNSIGNED PRIMARY KEY,
-  time_uploaded DATETIME NOT NULL,
-  title TEXT NOT NULL,
-  category VARCHAR(40) NULL,
-  content_type VARCHAR(60) NULL,
-  movie LONGBLOB
-  )
-"""
-mycursor.execute(query)
 
-hazard_query = """CREATE TABLE IF NOT EXISTS hazard_event (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  video_hash BIGINT UNSIGNED NOT NULL,
-  kind VARCHAR(40) NOT NULL,
-  start_time FLOAT NOT NULL,
-  end_time FLOAT NOT NULL,
-  attributes JSON,
-  created_at DATETIME NOT NULL,
-  INDEX idx_video (video_hash)
-)
-"""
-mycursor.execute(hazard_query)
-
-analysis_query = """CREATE TABLE IF NOT EXISTS analysis (
-  video_hash BIGINT UNSIGNED PRIMARY KEY,
-  is_safe BOOL NOT NULL,
-  risk_flags JSON,
-  checked_at DATETIME NOT NULL
-)
-"""
-mycursor.execute(analysis_query)
-mydb.commit()
-
-mycursor.close()
-mydb.close()
+if __name__ == '__main__':
+    sys.exit(main())

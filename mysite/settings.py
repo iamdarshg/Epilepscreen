@@ -88,24 +88,42 @@ WSGI_APPLICATION = 'mysite.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.environ.get('DB_NAME', 'darsh'),
-        'USER': os.environ.get('DB_USER', 'root'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
-        'PORT': os.environ.get('DB_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
-        'TEST': {
-            'CHARSET': 'utf8mb4',
-            'COLLATION': 'utf8mb4_unicode_ci',
-        },
+# One codebase, two database engines.
+#
+#   DB_ENGINE=sqlite  -> db.sqlite3 next to manage.py (default; no server needed)
+#   DB_ENGINE=mysql   -> the MySQL target named by the DB_* variables
+#
+# The raw SQL in epilepscreen/views.py is written with `%s` placeholders, which
+# Django translates for SQLite, so the same queries run on both engines.
+DB_ENGINE = os.environ.get('DB_ENGINE', 'sqlite').strip().lower()
+
+if DB_ENGINE == 'mysql':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ.get('DB_NAME', 'darsh'),
+            'USER': os.environ.get('DB_USER', 'root'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+            'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+            'PORT': os.environ.get('DB_PORT', '3306'),
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
+            'TEST': {
+                'CHARSET': 'utf8mb4',
+                'COLLATION': 'utf8mb4_unicode_ci',
+            },
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {'timeout': 20},
+        }
+    }
 
 
 # Password validation
@@ -149,11 +167,14 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# MySQL connection used by epilepscreen views (bypasses Django ORM)
-DB_CONFIG = {
-    'user': os.environ.get('DB_USER', 'root'),
-    'password': os.environ.get('DB_PASSWORD', 'sql123'),
-    'host': os.environ.get('DB_HOST', 'localhost'),
-    'database': os.environ.get('DB_NAME', 'darsh'),
-    'raise_on_warnings': True,
-}
+# Uploads are streamed in and out of the database, so nothing is written to
+# disk. This caps a single upload and is also enforced again in the view.
+MAX_UPLOAD_BYTES = int(os.environ.get('MAX_UPLOAD_BYTES', 100 * 1024 * 1024))
+
+# Frame rate the analyser samples at. Lower is faster; 10 fps is enough to
+# catch flashes that last a few frames.
+ANALYSIS_FPS = float(os.environ.get('ANALYSIS_FPS', '15'))
+
+# The storefront sells packs in a demonstration catalogue. No payment gateway
+# is wired in: orders are records in the local database, nothing more.
+DEMO_STORE = True

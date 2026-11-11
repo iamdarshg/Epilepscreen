@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Epilepscreen — screen every video before it plays{% endblock %}
+
+{% block content %}
+<section class="hero" aria-labelledby="hero-title">
+  <div class="container hero__grid">
+    <div class="hero__copy">
+      <p class="eyebrow">Photosensitivity screening · Python + OpenCV + NumPy</p>
+      <h1 class="hero__title" id="hero-title">Screen every video before it plays</h1>
+      <p class="hero__sentence">
+        Upload a film. Python reads it frame by frame, measures flash, red flash,
+        colour sweeps and striped patterns, and writes a timestamped hazard report.
+        The player then dims the picture exactly where the report says it should.
+      </p>
+      <div class="hero__actions">
+        <a class="btn btn--primary" href="{% url 'upload' %}">Screen a video</a>
+        <a class="btn" href="{% url 'browse' %}">Open the library</a>
+      </div>
+    </div>
+    <figure class="hero__figure">
+      <div class="hero__plate hero__plate--landscape" data-slot="hero">
+        <img src="{% static 'epilepscreen/hallmark-screen.jpg' %}" width="1280" height="640"
+             alt="Shadows of horn players projected on a lit screen." decoding="async">
+        {% if library_count %}
+        <div class="hero__price" data-keep>
+          <span class="hero__amount">{{ library_count }}</span>
+          <span class="hero__caption">video{{ library_count|pluralize }} in the library</span>
+        </div>
+        {% endif %}
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section class="container" aria-label="Library totals">
+  <div class="stat-strip">
+    <div class="stat">
+      <span class="stat__value num">{{ library_count }}</span>
+      <span class="stat__label">Videos stored</span>
+    </div>
+    <div class="stat">
+      <span class="stat__value">5</span>
+      <span class="stat__label">Detectors per frame</span>
+    </div>
+    <div class="stat">
+      <span class="stat__value">15</span>
+      <span class="stat__label">Frames read per second</span>
+    </div>
+    <div class="stat">
+      <span class="stat__value">0</span>
+      <span class="stat__label">Card details ever requested</span>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="how-title">
+  <div class="container">
+    <div class="section__head">
+      <h2 id="how-title">What happens to a file</h2>
+      <p class="lead">Three steps, all of them on this machine. No upload leaves it.</p>
+    </div>
+    <div class="home-steps">
+      <div class="home-step">
+        <span class="home-step__no">01</span>
+        <h3>Store</h3>
+        <p>The file is hashed with <code>hashlib.sha256</code>, compressed with
+          <code>lzma</code> and kept in the database. The same bytes can never be
+          stored twice, because the hash is the primary key.</p>
+      </div>
+      <div class="home-step">
+        <span class="home-step__no">02</span>
+        <h3>Screen</h3>
+        <p><code>cv2.VideoCapture</code> decodes about fifteen frames a second. NumPy turns each
+          frame into a luminance map, then flash, red-flash, colour-delta, stripe and
+          pattern-movement scores are compared against thresholds.</p>
+      </div>
+      <div class="home-step">
+        <span class="home-step__no">03</span>
+        <h3>Play</h3>
+        <p>Flagged runs become rows in <code>hazard_event</code> with a start and end
+          time. The player fetches those times and dims the video while playback is
+          inside them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="recent-title">
+  <div class="container">
+    <div class="section__head">
+      <h2 id="recent-title">Recently added</h2>
+      <p class="lead">The six newest files, with their screening state.</p>
+    </div>
+    {% if recent_videos %}
+    <ul class="library-grid">
+      {% for video in recent_videos %}
+      <li>
+        <a class="library-card" href="{% url 'player' video.hash %}">
+          <span class="library-card__top">
+            <span class="library-card__index num">{{ forloop.counter|stringformat:"02d" }}</span>
+            {% include "partials/_status_chip.html" with video=video %}
+          </span>
+          <span>
+            <span class="library-card__title">{{ video.title|default:"Untitled" }}</span>
+            <span class="library-card__meta">{{ video.category|default:"Other" }} · {{ video.content_type|default:"video" }}</span>
+          </span>
+          <span class="library-card__foot">
+            <span class="library-card__open">Open the player</span>
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty">
+      <h2>No videos found</h2>
+      <p>The library is empty. Upload a clip to run the screener — a phone video of a
+        strobe light is a fine first subject.</p>
+      <a class="btn btn--primary" href="{% url 'upload' %}">Upload a video</a>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section report" aria-labelledby="store-title">
+  <div class="container report__grid">
+    <div>
+      <h2 id="store-title">A demonstration storefront</h2>
+      <p class="lead">The store sells screening packs from a sample catalogue. Checkout
+        is simulated: it records an order in the database and never asks for a card.</p>
+      <div class="hero__actions">
+        <a class="btn" href="{% url 'store' %}">Look at the store</a>
+        <a class="btn" href="{% url 'checkout' %}">The demo checkout</a>
+      </div>
+    </div>
+    <div class="library">
+      <h3>Packs</h3>
+      {% if products %}
+      <ul class="library__list">
+        {% for product in products %}
+        <li>
+          <a href="{% url 'store' %}?product={{ product.pk }}#order">
+            <span>{{ product.title }}</span>
+            <span class="library__meta num">{{ product.price_display }}</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="library__empty">No packs seeded. Run <code>python manage.py migrate</code>.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}
+

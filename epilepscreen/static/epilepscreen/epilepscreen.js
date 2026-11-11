@@ -98,8 +98,8 @@
   window.Epilepscreen = {
     attach: function (video, options) {
       const opts = Object.assign({}, options || {});
-      const dimFilter = opts.dimFilter || 'rgba(0,0,0,0.65)';
-      const padding = opts.paddingSeconds || 0;
+      let dimFilter = opts.dimFilter || 'rgba(0,0,0,0.65)';
+      let padding = opts.paddingSeconds || 0;
       const overlay = createOverlay(video);
       let events = [];
       let dimmed = false;
@@ -191,6 +191,19 @@
         },
         setEnabled: function (on) { setUserDisabled(!on); },
         isEnabled: function () { return !userDisabled; },
+        setPadding: function (seconds) {
+          const value = Number(seconds);
+          padding = isFinite(value) && value >= 0 ? value : 0;
+          tick();
+        },
+        setDimFilter: function (value) {
+          if (value) dimFilter = value;
+          if (dimmed) setDimmed(overlay, dimFilter, true);
+        },
+        setEvents: function (list) {
+          events = Array.isArray(list) ? list : [];
+          tick();
+        },
         _internals: {
           _inHazard: inHazard,
           _simulate: function (t) { video.currentTime = t; tick(); },

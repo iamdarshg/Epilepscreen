@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% load static epilepscreen_fmt %}
+
+{% block title %}Report — {{ title }}{% endblock %}
+{% block description %}Timestamped photosensitivity report produced by the Python analyser.{% endblock %}
+
+{% block content %}
+<div class="container page--tight">
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="{% url 'browse' %}">Library</a>
+    <span aria-hidden="true">/</span>
+    <a href="{% url 'player' video.hash %}">{{ title }}</a>
+    <span aria-hidden="true">/</span>
+    <span>Report</span>
+  </nav>
+
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Screening report · {{ video.category|default:"Other" }}</p>
+      <h1>{{ title }}</h1>
+    </div>
+    <div>
+      <div class="chip-row" style="justify-content:flex-end;">
+        {% if not report.analyzed %}
+        <span class="chip chip--muted">Not screened</span>
+        {% elif report.is_safe and not report.event_count %}
+        <span class="chip chip--safe">No triggers found</span>
+        {% elif report.is_safe %}
+        <span class="chip chip--caution">{{ report.event_count }} window{{ report.event_count|pluralize }}</span>
+        {% else %}
+        <span class="chip chip--risk">{{ report.event_count }} window{{ report.event_count|pluralize }}</span>
+        {% endif %}
+      </div>
+      {% if report.analyzed %}
+      <p class="lead" style="margin-top:var(--space-sm);text-align:right;">
+        Checked {{ report.checked_at|date:"d M Y, H:i" }} at {{ analysis_fps|floatformat:0 }} frames per second.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="screening-grid">
+    <div>
+      {% if not report.analyzed %}
+      <div class="empty" style="border-top:0;padding-top:var(--space-lg);">
+        <h2>This file has no report yet</h2>
+        <p>The player can run the screener on demand. It decodes the file, measures
+          roughly ten frames a second and writes the events into the database.</p>
+        <a class="btn btn--primary" href="{% url 'player' video.hash %}">Screen it in the player</a>
+      </div>
+      {% else %}
+
+      <div class="report-grid">
+        <div class="stat">
+          <span class="stat__value num">{{ report.event_count }}</span>
+          <span class="stat__label">Hazard windows</span>
+        </div>
+        <div class="stat">
+          <span class="stat__value num">{{ report.risk_flags|length }}</span>
+          <span class="stat__label">Detector kinds</span>
+        </div>
+        <div class="stat">
+          <span class="stat__value num">{{ analysis_fps|floatformat:0 }}</span>
+          <span class="stat__label">Frames per second</span>
+        </div>
+        <div class="stat">
+          <span class="stat__value">{% if report.is_safe %}Clear{% else %}Flagged{% endif %}</span>
+          <span class="stat__label">Verdict</span>
+        </div>
+      </div>
+
+      {% if report.flags %}
+      <h2 style="font-size:var(--text-xl);font-weight:200;text-transform:uppercase;">Detectors that fired</h2>
+      <div class="table-scroll"><table class="report-table" style="margin-bottom:var(--space-xl);">
+        <thead>
+          <tr><th scope="col">Detector</th><th scope="col">Windows</th></tr>
+        </thead>
+        <tbody>
+          {% for flag in report.flags %}
+          <tr>
+            <td>{{ flag.label }}</td>
+            <td class="num">{{ flag.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
+
+      <h2 style="font-size:var(--text-xl);font-weight:200;text-transform:uppercase;">Every window</h2>
+      {% if report.events %}
+      <div class="table-scroll"><table class="report-table hazard-table">
+        <caption>Rows in <code>hazard_event</code> for hash {{ video.hash }}.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Kind</th>
+            <th scope="col">Start</th>
+            <th scope="col">End</th>
+            <th scope="col">Measurement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in report.events %}
+          <tr>
+            <td class="hazard-kind">{{ event.label }}</td>
+            <td class="num">{{ event.start|clock }}</td>
+            <td class="num">{{ event.end|clock }}</td>
+            <td class="num">{{ event.attributes|attrs }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <p class="library__empty">No rows: nothing crossed a threshold.</p>
+      {% endif %}
+
+      {% endif %}
+    </div>
+
+    <aside>
+      <h2 style="font-size:var(--text-lg);font-weight:400;text-transform:uppercase;">How this was measured</h2>
+      <ul class="method" style="margin-top:var(--space-md);">
+        <li><strong>Decode</strong> <code>cv2.VideoCapture</code> reads the file at about 15 frames per second (every second frame of a 30 fps file).</li>
+        <li><strong>Luminance</strong> sRGB is linearised (WCAG 2.x formula) and combined as
+          <code>0.2126R + 0.7152G + 0.0722B</code>, then scaled back to 0–255.</li>
+        <li><strong>Flash</strong> A jump of ≥ 40 luminance units between neighbouring
+          frames is a flash; consecutive flashes become one window with a flash rate.</li>
+        <li><strong>Red flash</strong> ≥ 25% of pixels where red dominates and the pixel is
+          not black, surrounded by non-red frames.</li>
+        <li><strong>Colour transition</strong> Mean per-pixel RGB distance ≥ 0.4 between
+          neighbouring frames.</li>
+        <li><strong>Pattern</strong> Along sampled scanlines, alternating high-contrast
+          edges (|ΔL| &gt; 0.3) covering ≥ 15% of the row; movement is a large change of that
+          map between frames.</li>
+      </ul>
+
+      <div class="empty" id="limitations" style="border-top:var(--rule-hair) solid var(--color-rule);padding-top:var(--space-lg);margin-top:var(--space-lg);">
+        <h2 style="font-size:var(--text-lg);">What this cannot promise</h2>
+        <p style="font-size:var(--text-sm);">
+          Sampling at 15 frames a second can still step over a flash that repeats at
+          exactly the sampling rate (aliasing). Thresholds are heuristics modelled on
+          WCAG 2.3 guidance, not a clinical standard. Compression changes colours before
+          they are measured. A clear report is evidence, not a guarantee — anyone who
+          knows their own triggers should still use their own judgement.
+        </p>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
