@@ -1,4 +1,17 @@
 from django.contrib import admin
 
-# NOTE: no models to register - app data is in MySQL via mysql.connector,
-# not the Django ORM (see epilepscreen/models.py).
+from .models import Purchase, StoreProduct
+
+
+@admin.register(StoreProduct)
+class StoreProductAdmin(admin.ModelAdmin):
+    list_display = ('title', 'product_type', 'price_cents', 'active', 'created_at')
+    list_filter = ('active', 'product_type')
+    search_fields = ('title', 'description')
+
+
+@admin.register(Purchase)
+class PurchaseAdmin(admin.ModelAdmin):
+    list_display = ('id', 'product', 'email', 'status', 'amount_cents', 'created_at')
+    list_filter = ('status', 'payment_method')
+    search_fields = ('email', 'product__title')

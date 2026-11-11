@@ -5,6 +5,10 @@ from epilepscreen.views import (
     upload_video,
     browse,
     store,
+    browser_page,
+    browser_asset,
+    product_detail,
+    checkout,
     add_to_cart,
     events,
     player,
@@ -17,10 +21,13 @@ from django.urls import path
 urlpatterns = [
     path('', index, name='index'),
     path('store/', store, name='store'),
+    path('store/browser/', browser_page, name='browser_page'),
+    path('store/browser/asset/', browser_asset, name='browser_asset'),
     path('browse/', browse, name='browse'),
     path('categories/', categories, name='categories'),
 
-    path('products/<int:product_id>/', store, name='product_detail'),
+    path('products/<int:product_id>/', product_detail, name='product_detail'),
+    path('checkout/', checkout, name='checkout'),
     path('cart/add/<int:product_id>/', add_to_cart, name='add_to_cart'),
 
     path('stream/<int:video_hash>/', stream_video, name='stream_video'),

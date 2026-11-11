@@ -14,8 +14,8 @@ import hashlib
 import lzma
 import os
 
-import mysql.connector
 from django.core.management.base import BaseCommand, CommandError
+from django.db import DatabaseError, IntegrityError
 
 from epilepscreen.media import (
     EXT_CONTENT_TYPES,
@@ -91,9 +91,9 @@ def ingest_file(path, category=None, auto_category=False, do_analyze=False):
             cursor.close()
         finally:
             cnx.close()
-    except mysql.connector.errors.IntegrityError:
+    except IntegrityError:
         return (hash_val, title, "duplicate: already stored")
-    except mysql.connector.Error as err:
+    except DatabaseError as err:
         return (None, title, f"db error: {err}")
 
     if do_analyze and not is_audio_content(content_type):

@@ -1,10 +1,26 @@
+"""Create the legacy raw-SQL tables used for video/blobs and analysis.
+
+Run once against the database configured in .env:
+
+    python sql.py
+
+Django's own tables (store products, purchases, auth, sessions) are created
+separately by `python manage.py migrate`.
+"""
+import os
+from pathlib import Path
+
 import mysql.connector
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().with_name('.env'))
 
 mydb = mysql.connector.connect(
-  host="localhost",
-  user="root",
-  password="sql123",
-  database="darsh"
+  host=os.environ.get('DB_HOST', '127.0.0.1'),
+  user=os.environ.get('DB_USER', 'root'),
+  password=os.environ.get('DB_PASSWORD', ''),
+  database=os.environ.get('DB_NAME', 'darsh'),
+  charset='utf8mb4',
 )
 
 mycursor = mydb.cursor()
@@ -17,7 +33,6 @@ query = """CREATE TABLE IF NOT EXISTS epilepsy (
   movie LONGBLOB
   )
 """
-
 mycursor.execute(query)
 
 hazard_query = """CREATE TABLE IF NOT EXISTS hazard_event (
@@ -45,5 +60,3 @@ mydb.commit()
 
 mycursor.close()
 mydb.close()
-
-print("Tables created successfully.")

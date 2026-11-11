@@ -1,19 +1,31 @@
-"""
-Epilepscreen Views - Video rental platform with SQLite/MySQL support.
-"""
+"""Epilepscreen views - video library and storefront, backed by MySQL."""
 
 import hashlib
 import datetime
 import json
 import os
 import lzma
-import mimetypes
-from typing import Optional, Dict, Any, List
+from urllib.parse import urlparse
+from django.contrib import messages
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.shortcuts import render, redirect
 from django.http import HttpResponse, Http404, JsonResponse
-from django.conf import settings
-from django.views.decorators.clickjacking import xframe_options_exempt
-from django.db import connection
+from django.urls import reverse
+from django.utils.safestring import mark_safe
+from django.views.decorators.clickjacking import xframe_options_exempt, xframe_options_sameorigin
+from django.views.decorators.http import require_POST
+from django.db import connection, DatabaseError
+
+from epilepscreen.media import BUILTIN_CATEGORIES, content_type_for, normalize_category
+from epilepscreen.models import Purchase, StoreProduct
+from epilepscreen.store_browser import (
+    BrowserError,
+    browser_context,
+    fetch_asset,
+    fetch_page,
+    is_allowed_url,
+)
 
 
 class VideoStore:
@@ -192,66 +204,269 @@ EXTERNAL_STORES = [
     {
         'name': 'Internet Archive',
         'url': 'https://archive.org/details/movies&and[]=subject%3A%22medical%22',
-        'icon': '🏛',
+        'note': 'Public-domain medical film',
         'description': 'Public domain medical and educational videos. Download MP4, AVI, OGG.',
     },
     {
         'name': 'NIH VideoCast',
         'url': 'https://videocast.nih.gov/',
-        'icon': '🏥',
+        'note': 'NIH lectures and procedures',
         'description': 'Official NIH medical video library. Lectures, procedures, and research footage.',
     },
     {
         'name': 'CDC Media Library',
         'url': 'https://www.cdc.gov/media/library/index.html',
-        'icon': '📡',
+        'note': 'Public-health footage',
         'description': 'Centers for Disease Control public health videos and B-roll footage.',
     },
     {
         'name': 'Pixabay Videos',
         'url': 'https://pixabay.com/videos/search/medical/',
-        'icon': '🎞',
+        'note': 'Free stock medical clips',
         'description': 'Free stock medical footage. No attribution required. HD and 4K clips.',
     },
     {
         'name': 'Pexels Videos',
         'url': 'https://www.pexels.com/search/videos/medical/',
-        'icon': '📹',
+        'note': 'Free stock medical clips',
         'description': 'Free medical stock videos. Downloadable in multiple resolutions.',
     },
     {
         'name': 'MedlinePlus',
         'url': 'https://medlineplus.gov/videolist.html',
-        'icon': '🩺',
+        'note': 'Patient-education video',
         'description': 'Patient education videos from the National Library of Medicine.',
     },
 ]
 
+PRODUCT_TYPE_LABELS = dict(StoreProduct.PRODUCT_TYPES)
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
+def _money(cents):
+    """Render a cent amount as a short dollar string."""
+    cents = int(cents or 0)
+    amount = f"{cents / 100:,.2f}".rstrip('0').rstrip('.')
+    return f"${amount}"
+
+
+def _decorate_product(product):
+    cents = int(product.price_cents or 0)
+    amount = f"{cents / 100:,.2f}".rstrip('0').rstrip('.')
+    product.price_amount = amount
+    product.price_display = f"${amount}"
+    product.kind_label = PRODUCT_TYPE_LABELS.get(product.product_type, product.product_type)
+    return product
+
+
+def _recent_videos(limit=4):
+    """The newest library items, without reading their compressed blobs."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT hash, time_uploaded, title, category, content_type "
+                "FROM epilepsy WHERE movie IS NOT NULL "
+                "ORDER BY time_uploaded DESC LIMIT %s",
+                (limit,),
+            )
+            columns = [col[0] for col in cursor.description] if cursor.description else []
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    except DatabaseError:
+        return []
+
+
+def _library_count():
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM epilepsy WHERE movie IS NOT NULL")
+            row = cursor.fetchone()
+            return int(row[0]) if row else 0
+    except DatabaseError:
+        return 0
+
+
+def _store_context(request, selected_product_id=None):
+    try:
+        products = [_decorate_product(p) for p in
+                    StoreProduct.objects.filter(active=True).order_by('price_cents')]
+    except DatabaseError:
+        products = []
+
+    product_ids = {p.pk for p in products}
+    if selected_product_id not in product_ids:
+        selected_product_id = products[0].pk if products else None
+    selected_product = next(
+        (p for p in products if p.pk == selected_product_id), None)
+
+    recent_order = None
+    raw_order = (request.GET.get('order') or '').strip()
+    if raw_order.isdigit():
+        try:
+            recent_order = (Purchase.objects.select_related('product')
+                            .filter(pk=int(raw_order)).first())
+        except DatabaseError:
+            recent_order = None
+
+    return {
+        'products': products,
+        'hero_product': products[0] if products else None,
+        'selected_product': selected_product,
+        'selected_product_id': selected_product_id,
+        'stores': EXTERNAL_STORES,
+        'categories': BUILTIN_CATEGORIES,
+        'max_upload_mb': MAX_UPLOAD_BYTES // (1024 * 1024),
+        'recent_videos': _recent_videos(),
+        'library_count': _library_count(),
+        'recent_order': recent_order,
+    }
+
 
 def store(request):
-    return render(request, 'store.html', {
-        'stores': EXTERNAL_STORES,
+    raw_product = (request.GET.get('product') or '').strip()
+    selected_product_id = int(raw_product) if raw_product.isdigit() else None
+    return render(request, 'store.html', _store_context(request, selected_product_id))
+
+
+def _source_for(url):
+    """Name the store source a proxied address belongs to."""
+    host = (urlparse(url).hostname or '').lower() if url else ''
+    for source in EXTERNAL_STORES:
+        source_host = (urlparse(source['url']).hostname or '').lower()
+        if host == source_host or host.endswith('.' + source_host):
+            return source
+    if host:
+        return {'name': host, 'url': url, 'note': '', 'description': ''}
+    return EXTERNAL_STORES[0]
+
+
+@xframe_options_sameorigin
+def browser_page(request):
+    """Reader shell for the store's in-page source browser."""
+    raw_url = (request.GET.get('url') or '').strip()
+    source = _source_for(raw_url)
+    target = raw_url if is_allowed_url(raw_url) else source['url']
+    back = (request.GET.get('back') or '').strip()
+    context = browser_context(source, target, back)
+    context.update({
+        'mode': 'page',
+        'title': '',
+        'body_html': '',
+        'error': '',
     })
 
-
-def add_to_cart(request, product_id):
-    s = get_video_store()
     try:
-        cursor = connection.cursor()
-        cursor.execute("SELECT * FROM store_products WHERE id = %s", (product_id,))
-        columns = [col[0] for col in cursor.description] if cursor.description else []
-        row = cursor.fetchone()
-        product = dict(zip(columns, row)) if row else None
-        if not product:
-            return JsonResponse({'error': 'Product not found'}, status=404)
-        user_email = request.GET.get('email', 'guest@example.com')
-        s.create_purchase(product_id, user_email, product['price_cents'], 'completed')
-        return JsonResponse({
-            'success': True,
-            'product': {'name': product.get('title', 'Product'), 'price': f"${product['price_cents']/100:.2f}"}
-        })
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        result = fetch_page(target)
+    except BrowserError as exc:
+        context['error'] = str(exc)
+    else:
+        if isinstance(result, dict):
+            context.update(result)
+            context['mode'] = 'captured'
+            context['display_url'] = result.get('final_url', target)
+        else:
+            title, body_html, final_url = result
+            context.update({
+                'title': title,
+                'body_html': mark_safe(body_html if body_html.strip() else ''),
+                'display_url': final_url,
+            })
+
+    return render(request, 'store_browser.html', context)
+
+
+@xframe_options_sameorigin
+def browser_asset(request):
+    """Proxy one image, font, or stylesheet for the reader shell."""
+    target = (request.GET.get('url') or '').strip()
+    if not is_allowed_url(target):
+        return HttpResponse('Not an allowed asset.', status=404)
+    try:
+        data, content_type = fetch_asset(target)
+    except BrowserError as exc:
+        return HttpResponse(str(exc), status=502, content_type='text/plain; charset=utf-8')
+    response = HttpResponse(data, content_type=content_type)
+    response['Cache-Control'] = 'private, max-age=300'
+    return response
+
+
+def product_detail(request, product_id):
+    product = StoreProduct.objects.filter(pk=product_id, active=True).first()
+    if not product:
+        raise Http404("Product not found")
+    return redirect(f"{reverse('store')}?product={product.pk}#order")
+
+
+@require_POST
+def checkout(request):
+    product_id = (request.POST.get('product_id') or '').strip()
+    email = (request.POST.get('email') or '').strip()
+    product = StoreProduct.objects.filter(
+        pk=product_id, active=True).first() if product_id.isdigit() else None
+
+    errors = []
+    if not product:
+        errors.append('Choose a pack from the catalog.')
+    if not email:
+        errors.append('Enter an email address for the invoice.')
+    else:
+        try:
+            validate_email(email)
+        except ValidationError:
+            errors.append('Enter a valid email address.')
+
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        target = f"{reverse('store')}?product={product.pk}#order" if product else f"{reverse('store')}#order"
+        return redirect(target)
+
+    try:
+        purchase = Purchase.objects.create(
+            product=product,
+            email=email,
+            payment_method='invoice',
+            status='pending',
+            amount_cents=product.price_cents,
+            currency='USD',
+        )
+    except DatabaseError:
+        messages.error(request, 'The order could not be recorded. Try again.')
+        return redirect(f"{reverse('store')}?product={product.pk}#order")
+
+    return redirect(f"{reverse('store')}?order={purchase.pk}#order")
+
+
+@require_POST
+def add_to_cart(request, product_id):
+    product = StoreProduct.objects.filter(pk=product_id, active=True).first()
+    if not product:
+        return JsonResponse({'error': 'Product not found'}, status=404)
+
+    email = (request.POST.get('email') or '').strip()
+    if not email:
+        return JsonResponse({'error': 'Email is required'}, status=400)
+    try:
+        validate_email(email)
+    except ValidationError:
+        return JsonResponse({'error': 'Enter a valid email address'}, status=400)
+
+    try:
+        purchase = Purchase.objects.create(
+            product=product,
+            email=email,
+            payment_method='invoice',
+            status='pending',
+            amount_cents=product.price_cents,
+            currency='USD',
+        )
+    except DatabaseError:
+        return JsonResponse({'error': 'The order could not be recorded'}, status=500)
+
+    return JsonResponse({
+        'success': True,
+        'order_id': purchase.pk,
+        'product': {'name': product.title, 'price': _money(product.price_cents)},
+    })
 
 
 def stream_video(request, video_hash):
@@ -289,34 +504,58 @@ def stream_as_file(request, video_hash):
     return stream_video(request, video_hash)
 
 
+def _upload_target(request):
+    return 'store' if request.POST.get('next') == 'store' else 'browse'
+
+
+def _store_with_status(request, status):
+    return render(request, 'store.html', _store_context(request), status=status)
+
+
 def upload_video(request):
-    if request.method == 'POST' and request.FILES.get('video_file'):
-        video_file = request.FILES['video_file']
-        title = request.POST.get('title', 'Untitled')
-        category = request.POST.get('category', '')
-        mime_type, _ = mimetypes.guess_type(video_file.name)
-        if mime_type is None:
-            mime_type = 'video/mp4'
-        video_format = validate_video_format(video_file.name, mime_type, video_file.content_type)
-        now = datetime.datetime.now()
-        hash_input = f"{title}{now}{os.urandom(8)}".encode('utf-8')
-        video_hash = int(hashlib.sha256(hash_input).hexdigest()[:15], 16)
+    if request.method != 'POST' or not request.FILES.get('video_file'):
+        messages.error(request, 'Choose a video file to upload.')
+        return redirect(_upload_target(request))
+
+    video_file = request.FILES['video_file']
+    if video_file.size > MAX_UPLOAD_BYTES:
+        messages.error(request, f"The file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.")
+        return _store_with_status(request, 413)
+
+    title = (request.POST.get('title') or os.path.splitext(os.path.basename(video_file.name))[0]).strip()[:200]
+    category = normalize_category(request.POST.get('category')) or 'Other'
+    mime_type = content_type_for(video_file.name, getattr(video_file, 'content_type', None))
+    if not mime_type.startswith('video/'):
+        messages.error(request, 'That file is not a video. Upload MP4, WebM, MOV, AVI, or MKV.')
+        return redirect(_upload_target(request))
+
+    video_format = validate_video_format(video_file.name, mime_type, video_file.content_type)
+    now = datetime.datetime.now()
+    hash_input = f"{title}{now}{os.urandom(8)}".encode('utf-8')
+    video_hash = int(hashlib.sha256(hash_input).hexdigest()[:15], 16)
+
+    try:
         movie_blob = lzma.compress(video_file.read())
         cursor = connection.cursor()
         cursor.execute(
-            "INSERT INTO epilepsy (hash, time_uploaded, title, category, content_type, movie) VALUES (?, ?, ?, ?, ?, ?)",
-            (video_hash, now.isoformat(), title, category or 'Other', video_format['mime_type'], movie_blob)
+            "INSERT INTO epilepsy (hash, time_uploaded, title, category, content_type, movie) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (video_hash, now, title, category, video_format['mime_type'], movie_blob)
         )
         connection.commit()
-        return redirect('browse')
-    return redirect('browse')
+    except Exception:
+        messages.error(request, 'The upload could not be stored. Try again.')
+        return redirect(_upload_target(request))
+
+    messages.success(request, f"Uploaded {title}. It is ready in Browse.")
+    return redirect(_upload_target(request))
 
 
 def events(request, video_hash):
     store = get_video_store()
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT id, kind, start_time, end_time, attributes FROM hazard_event WHERE video_hash = ? ORDER BY start_time ASC", (video_hash,))
+        cursor.execute("SELECT id, kind, start_time, end_time, attributes FROM hazard_event WHERE video_hash = %s ORDER BY start_time ASC", (video_hash,))
         columns = [col[0] for col in cursor.description] if cursor.description else []
         evts = [dict(zip(columns, row)) for row in cursor.fetchall()]
     except Exception:
@@ -384,5 +623,7 @@ def get_db_connection():
 
 __all__ = [
     'index', 'stream_video', 'upload_video', 'browse', 'store',
-    'add_to_cart', 'events', 'analyze', 'player', 'categories', 'upload',
+    'browser_page', 'browser_asset',
+    'product_detail', 'checkout', 'add_to_cart', 'events', 'analyze',
+    'player', 'categories', 'upload',
 ]
