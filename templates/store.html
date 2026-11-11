@@ -1,0 +1,301 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epilepscreen store</title>
+<meta name="description" content="Screen a video for photosensitive risk, capture a public-source download, or upload a file of your own.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sofia+Sans+Extra+Condensed:wght@200;400&family=Barlow:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'epilepscreen/store.css' %}">
+</head>
+<body>
+
+<header class="site-head">
+  <div class="banner">
+    <div class="container banner__inner">
+      <p>Sample catalog. Prices and listings are placeholders.</p>
+      <a href="{% url 'browse' %}">Browse the library</a>
+    </div>
+  </div>
+  <div class="bar">
+    <div class="container bar__inner">
+      <a class="wordmark" href="{% url 'store' %}">epilepscreen</a>
+      <nav class="bar__nav" aria-label="Store">
+        <a href="{% url 'browse' %}">Browse</a>
+        <a href="#sources">Sources</a>
+        <a href="#order">Order</a>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main>
+  {% if messages %}
+  <div class="container notice-stack" role="status">
+    {% for message in messages %}
+    <p class="notice{% if 'error' in message.tags %} notice--error{% endif %}">{{ message }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="container hero__grid">
+      <div class="hero__copy">
+        <h1 class="hero__title" id="hero-title">Screen every video before it plays</h1>
+        <p class="hero__sentence">Upload a film or capture one from a public source.</p>
+        <div class="hero__actions">
+          <a class="btn btn--primary" href="#order">Choose a pack</a>
+          <a class="btn" href="{% url 'browser_page' %}?url={{ stores.0.url|urlencode }}&amp;back=/store/%23sources"
+             data-open-browser data-source-name="{{ stores.0.name }}">Open the sources browser</a>
+        </div>
+      </div>
+      <figure class="hero__figure">
+        <div class="hero__plate" data-slot="hero">
+          <img src="{% static 'epilepscreen/hallmark-screen.jpg' %}" width="1280" height="640"
+               alt="Shadows of horn players projected on a lit screen." decoding="async">
+          {% if hero_product %}
+          <div class="hero__price" data-keep>
+            <span class="hero__amount">{{ hero_product.price_display }}</span>
+            <span class="hero__caption">{{ hero_product.title }}, sample price</span>
+          </div>
+          {% endif %}
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section range" id="order" aria-labelledby="range-title">
+    <div class="container">
+      <div class="section__head">
+        <h2 id="range-title">The range</h2>
+        <p class="lead">Four packs. Pick one, leave an email, and the invoice follows.</p>
+      </div>
+
+      {% if recent_order %}
+      <p class="notice" role="status">
+        Order #{{ recent_order.pk }} recorded for {{ recent_order.email }}. The invoice is pending.
+      </p>
+      {% endif %}
+
+      <div class="range__grid">
+        <ul class="range__list">
+          {% for product in products %}
+          <li>
+            <a class="range__row{% if product.pk == selected_product_id %} is-selected{% endif %}"
+               href="?product={{ product.pk }}#order"
+               {% if product.pk == selected_product_id %}aria-current="true"{% endif %}>
+              <span class="range__no">{{ forloop.counter|stringformat:"02d" }}</span>
+              <span class="range__body">
+                <span class="range__title">{{ product.title }}</span>
+                <span class="range__kind">{{ product.kind_label }}</span>
+              </span>
+              <span class="range__price">{{ product.price_display }}</span>
+            </a>
+          </li>
+          {% empty %}
+          <li class="range__row">
+            <span class="range__no">00</span>
+            <span class="range__body">
+              <span class="range__title">No packs yet</span>
+              <span class="range__kind">Add a product in the admin.</span>
+            </span>
+            <span class="range__price">$0</span>
+          </li>
+          {% endfor %}
+        </ul>
+
+        {% if selected_product %}
+        <form class="order" method="post" action="{% url 'checkout' %}">
+          {% csrf_token %}
+          <h3>{{ selected_product.title }}</h3>
+          <p class="order__desc">{{ selected_product.description }}</p>
+          <p class="order__total">
+            <span>Total, invoiced</span>
+            <span>{{ selected_product.price_display }}</span>
+          </p>
+          <input type="hidden" name="product_id" value="{{ selected_product.pk }}">
+          <div class="field">
+            <label for="order-email">Email for the invoice</label>
+            <input id="order-email" name="email" type="email" autocomplete="email"
+                   placeholder="you@example.com" required>
+          </div>
+          <button class="btn btn--primary" type="submit">Record the order</button>
+          <p class="order__note">Invoice only. No card details are collected here.</p>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="section sources" id="sources" aria-labelledby="sources-title">
+    <div class="container sources__grid">
+      <div>
+        <h2 id="sources-title">Open a source without leaving the store</h2>
+        <p class="lead">The browser opens inside the page. Follow a direct video link and the file is saved to the library.</p>
+        <p class="sources__note">The reader leaves scripts and site styles behind, so pages load as text and pictures. Only the six sources below and their subdomains are reachable.</p>
+      </div>
+      <ul class="source-list">
+        {% for source in stores %}
+        <li>
+          <a class="source-row"
+             href="{% url 'browser_page' %}?url={{ source.url|urlencode }}&amp;back=/store/%23sources"
+             data-open-browser data-source-name="{{ source.name }}">
+            <span class="source-row__name">{{ source.name }}</span>
+            <span class="source-row__note">{{ source.note }}</span>
+            <span class="source-row__open">Open in the browser</span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section upload" id="upload" aria-labelledby="upload-title">
+    <div class="container upload__grid">
+      <figure class="upload__plate">
+        <div class="upload__frame" data-slot="upload">
+          <img src="{% static 'epilepscreen/hallmark-camera.jpg' %}" width="1280" height="1032"
+               alt="A camera operator framing a shot with a shoulder camera on a tripod." loading="lazy" decoding="async">
+        </div>
+        <figcaption>Jacek Halicki, CC BY-SA 4.0. A stand-in for your own footage.</figcaption>
+      </figure>
+      <div class="upload__copy">
+        <h2 id="upload-title">Add your own file</h2>
+        <p class="lead">Upload a film from this machine. It lands in Browse with the rest of the library.</p>
+        <form class="upload__form" method="post" action="{% url 'upload' %}" enctype="multipart/form-data">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="store">
+          <div class="field">
+            <label for="upload-title">Title</label>
+            <input id="upload-title" name="title" type="text" maxlength="200"
+                   placeholder="Leave blank to use the file name">
+          </div>
+          <div class="field">
+            <label for="upload-category">Category</label>
+            <select id="upload-category" name="category">
+              {% for category in categories %}
+              <option value="{{ category }}">{{ category }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="upload-file">Video file</label>
+            <input id="upload-file" name="video_file" type="file" accept="video/*" required
+                   data-file-input="#upload-file-name">
+            <p class="field__hint">MP4, WebM, MOV, AVI, or MKV. Up to {{ max_upload_mb }} MB. <span id="upload-file-name" data-file-name>No file chosen.</span></p>
+          </div>
+          <button class="btn btn--primary" type="submit">Upload to the library</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="section report" id="library" aria-labelledby="report-title">
+    <div class="container report__grid">
+      <div>
+        <h2 id="report-title">A report with places and times</h2>
+        <p class="lead">Every screening writes the same sheet: the kind of event, when it starts, when it ends.</p>
+        <table class="report-table">
+          <caption>Sample report. The analyser fills the rows.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Kind</th>
+              <th scope="col">Start</th>
+              <th scope="col">End</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Flash</td>
+              <td class="num">0:00.0</td>
+              <td class="num">0:00.4</td>
+            </tr>
+            <tr>
+              <td>Red flash</td>
+              <td class="num">0:12.2</td>
+              <td class="num">0:12.8</td>
+            </tr>
+            <tr>
+              <td>Pattern</td>
+              <td class="num">0:31.0</td>
+              <td class="num">0:34.6</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="report__note">Times are placeholders. Open a library item to run the real analysis.</p>
+      </div>
+
+      <div class="library">
+        <h3>Recently captured</h3>
+        {% if recent_videos %}
+        <ul class="library__list">
+          {% for video in recent_videos %}
+          <li>
+            <a href="{% url 'player' video.hash %}">
+              <span>{{ video.title|default:"Untitled" }}</span>
+              <span class="library__meta">{{ video.category|default:"Other" }}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="library__empty">No files yet. Upload one or capture a download.</p>
+        {% endif %}
+        <p class="library__count">{{ library_count }} item{{ library_count|pluralize }} in the library. <a href="{% url 'browse' %}">Browse all</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <div>
+      <a class="wordmark" href="{% url 'store' %}">epilepscreen</a>
+      <p class="footer__line">Photosensitivity screening for video you already have, or video you find.</p>
+    </div>
+    <nav class="footer__nav" aria-label="Footer">
+      <a href="{% url 'browse' %}">Browse</a>
+      <a href="{% url 'store' %}">Store</a>
+      <a href="{% url 'admin:index' %}">Admin</a>
+    </nav>
+    <div class="footer__credits">
+      <p>Photographs:
+        <a href="https://commons.wikimedia.org/wiki/File:Ansambel_SkaMeika%C2%B4.jpg" target="_blank" rel="noopener">Enel Lepik</a>,
+        <a href="https://commons.wikimedia.org/wiki/File:2016_Operator_kamery_w_czasie_pracy.JPG" target="_blank" rel="noopener">Jacek Halicki</a>,
+        CC BY-SA 4.0.</p>
+      <p>Sample catalog. Prices and listings are placeholders.</p>
+    </div>
+  </div>
+</footer>
+
+{% if selected_product %}
+<div class="buy-bar">
+  <div class="container buy-bar__inner">
+    <p class="buy-bar__pack">
+      <span class="buy-bar__label">Selected pack</span>
+      <span class="buy-bar__title">{{ selected_product.title }}</span>
+    </p>
+    <span class="buy-bar__price">{{ selected_product.price_display }}</span>
+    <a class="btn btn--primary" href="#order">Order the pack</a>
+  </div>
+</div>
+{% endif %}
+
+<dialog class="source-browser" data-source-browser aria-labelledby="source-browser-title">
+  <div class="source-browser__head">
+    <div>
+      <p class="source-browser__title" id="source-browser-title" data-browser-title>Source browser</p>
+      <p class="source-browser__hint">Direct video downloads are saved to the library.</p>
+    </div>
+    <button class="btn source-browser__close" type="button" data-close-browser>Close</button>
+  </div>
+  <iframe class="source-browser__frame" data-browser-frame title="Public source browser" src="about:blank"></iframe>
+  <p class="source-browser__foot" data-capture-status aria-live="polite">Choose a source to open it here.</p>
+</dialog>
+
+<script src="{% static 'epilepscreen/store.js' %}" defer></script>
+</body>
+</html>

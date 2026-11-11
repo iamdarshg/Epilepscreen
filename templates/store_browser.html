@@ -1,0 +1,67 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>{{ source_name }} in the store browser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sofia+Sans+Extra+Condensed:wght@200;400&family=Barlow:wght@300;400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'epilepscreen/store.css' %}">
+</head>
+<body class="reader">
+
+<header class="reader__head">
+  <div class="reader__where">
+    <p class="reader__source">{{ source_name }}</p>
+    <p class="reader__url" title="{{ display_url }}">{{ display_url }}</p>
+  </div>
+  <div class="reader__actions">
+    <a class="btn" href="{{ back_href }}" target="_top">Back</a>
+    <a class="btn" href="{% url 'store' %}" target="_top">Store</a>
+  </div>
+</header>
+
+<main class="reader__body">
+  {% if mode == 'captured' %}
+  <div class="reader__capture">
+    <h1>Captured</h1>
+    {% if saved %}
+    <p>Saved <strong>{{ title }}</strong> to the library. It is ready to screen in Browse.</p>
+    {% else %}
+    <p><strong>{{ title }}</strong> was already in the library, so nothing was stored twice.</p>
+    {% endif %}
+    <p class="reader__capture-meta">{{ content_type }}. {{ bytes|filesizeformat }}.</p>
+    <div class="reader__capture-actions">
+      <a class="btn btn--primary" href="{% url 'browse' %}" target="_top">Open the library</a>
+      <a class="btn" href="{{ back_href }}" target="_top">Back</a>
+    </div>
+  </div>
+  {% elif error %}
+  <div class="reader__error">
+    <h1>That page did not open</h1>
+    <p>{{ error }}</p>
+    <p><a href="{{ back_href }}" target="_top">Go back</a></p>
+  </div>
+  {% else %}
+  {% if body_html %}{{ body_html }}{% else %}
+  <p>This page returned no readable text. Go back and try another link.</p>
+  {% endif %}
+  {% endif %}
+</main>
+
+{% if mode == 'captured' %}
+<script>
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({
+      type: 'epilepscreen-capture',
+      saved: {{ saved|yesno:"true,false" }},
+      title: "{{ title|escapejs }}"
+    }, window.location.origin);
+  }
+</script>
+{% endif %}
+</body>
+</html>
