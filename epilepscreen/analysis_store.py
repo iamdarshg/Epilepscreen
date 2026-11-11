@@ -1,67 +1,59 @@
-"""Persist detected hazard events into MySQL."""
+"""Persist screening results: hazard events plus one verdict row per video.
+
+The writes are plain SQL against the tables migration 0003 creates, so the
+same code path works on SQLite and MySQL. Both writers are called from
+`epilepscreen.views.run_screening` inside one request.
+"""
 import datetime
 import json
+
+from django.db import DatabaseError, connection, transaction
 
 from photosensitive.analyzer import HazardEvent, RiskProfile
 
 
 def save_events(video_hash: int, events: list[HazardEvent]) -> int:
-    """Insert hazard events for a video into MySQL. Returns count inserted."""
-    if not events:
-        return 0
-    from epilepscreen.views import get_db_connection
+    """Replace the stored events for a video. Returns how many were written.
 
-    cnx = None
-    try:
-        cnx = get_db_connection()
-        cursor = cnx.cursor()
-        # Delete existing events for this video to prevent duplicates
-        cursor.execute(
-            "DELETE FROM hazard_event WHERE video_hash = %s",
-            (video_hash,),
-        )
-        now = datetime.datetime.now()
-        for e in events:
+    Deleting first keeps a re-screening from stacking duplicate rows on top of
+    yesterday's result.
+    """
+    with transaction.atomic():
+        with connection.cursor() as cursor:
             cursor.execute(
+                "DELETE FROM hazard_event WHERE video_hash = %s", (video_hash,))
+            if not events:
+                return 0
+            now = datetime.datetime.now()
+            rows = [
+                (video_hash, event.kind, float(event.start_time),
+                 float(event.end_time), json.dumps(event.attributes), now)
+                for event in events
+            ]
+            cursor.executemany(
                 "INSERT INTO hazard_event "
                 "(video_hash, kind, start_time, end_time, attributes, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (video_hash, e.kind, e.start_time, e.end_time,
-                 json.dumps(e.attributes), now),
-            )
-        cnx.commit()
-        cursor.close()
-        return len(events)
-    except Exception as err:
-        print(f"Error saving events: {err}")
-        return 0
-    finally:
-        if cnx:
-            cnx.close()
+                "VALUES (%s, %s, %s, %s, %s, %s)", rows)
+        return len(rows)
 
 
 def save_analysis(video_hash: int, profile: RiskProfile) -> None:
-    """Record that a video was analyzed, even when it came back safe.
-
-    Safe videos store no hazard events, so without this row the site
-    could never tell "analyzed and safe" apart from "never analyzed".
-    """
-    from epilepscreen.views import get_db_connection
-
-    cnx = None
+    """Record the verdict, so 'screened and safe' is distinguishable from
+    'never screened'. REPLACE keeps exactly one row per video."""
     try:
-        cnx = get_db_connection()
-        cursor = cnx.cursor()
-        cursor.execute(
-            "REPLACE INTO analysis (video_hash, is_safe, risk_flags, "
-            "checked_at) VALUES (%s, %s, %s, %s)",
-            (video_hash, int(profile.is_safe),
-             json.dumps(profile.risk_flags), datetime.datetime.now()),
-        )
-        cnx.commit()
-        cursor.close()
-    except Exception as err:
-        print(f"Error saving analysis: {err}")
-    finally:
-        if cnx:
-            cnx.close()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "REPLACE INTO analysis (video_hash, is_safe, risk_flags, checked_at) "
+                "VALUES (%s, %s, %s, %s)",
+                (int(video_hash), int(bool(profile.is_safe)),
+                 json.dumps(profile.risk_flags), datetime.datetime.now()))
+    except DatabaseError as exc:
+        raise DatabaseError(f'Could not store the analysis: {exc}') from exc
+
+
+def clear_analysis(video_hash: int) -> None:
+    """Forget a screening (used when a video is re-uploaded under a new hash)."""
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM hazard_event WHERE video_hash = %s", (video_hash,))
+            cursor.execute("DELETE FROM analysis WHERE video_hash = %s", (video_hash,))

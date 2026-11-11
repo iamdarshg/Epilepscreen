@@ -205,3 +205,57 @@ class VideoCategory(models.Model):
             models.Index(fields=['slug'], name='category_slug_idx'),
             models.Index(fields=['is_active'], name='category_active_idx'),
         ]
+
+
+# --- Legacy SQL tables -----------------------------------------------------
+# These three tables predate the ORM part of the project: they hold the video
+# blobs and the analysis output. `epilepscreen/views.py` talks to them with
+# hand-written SQL, which keeps the SQL visible and easy to explain in a
+# practical exam. The models below exist so Django knows the schema:
+# migration 0003 creates the tables on both SQLite and MySQL, and
+# `managed = False` stops migrations from trying to recreate them.
+
+
+class VideoRecord(models.Model):
+    """One uploaded media file. `movie` holds lzma-compressed bytes."""
+
+    hash = models.BigIntegerField(primary_key=True)
+    time_uploaded = models.DateTimeField()
+    title = models.CharField(max_length=200)
+    category = models.CharField(max_length=40, null=True, blank=True)
+    content_type = models.CharField(max_length=60, null=True, blank=True)
+    movie = models.BinaryField(blank=True, null=True)
+
+    class Meta:
+        managed = False
+        db_table = 'epilepsy'
+        verbose_name = 'Video record'
+
+
+class HazardEvent(models.Model):
+    """A timestamped range where the Python analyser found a trigger."""
+
+    video_hash = models.BigIntegerField()
+    kind = models.CharField(max_length=40)
+    start_time = models.FloatField()
+    end_time = models.FloatField()
+    attributes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = 'hazard_event'
+
+
+class Analysis(models.Model):
+    """One row per screened video: safe/unsafe plus the risk flags."""
+
+    video_hash = models.BigIntegerField(primary_key=True)
+    is_safe = models.BooleanField()
+    risk_flags = models.JSONField(default=list, blank=True)
+    checked_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = 'analysis'
+        verbose_name_plural = 'analyses'
