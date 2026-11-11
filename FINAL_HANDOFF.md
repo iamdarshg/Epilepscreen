@@ -1,6 +1,7 @@
 # Final handoff
 
-Branch: `feat/final-sprint` (based on `main` at `6a3d279`).
+Branch: `feat/final-sprint` (based on `main` at `6a3d279`), pushed, pull request
+open at <https://github.com/iamdarshg/Epilepscreen/pull/1>.
 Machine: Windows, Python 3.12.2, Django 5.1.7, NumPy 2.5.4, OpenCV 5.0.0.
 Database used for every check below: **SQLite** (`DB_ENGINE=sqlite`, the default).
 
