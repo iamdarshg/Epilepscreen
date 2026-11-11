@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Demo checkout — Epilepscreen store{% endblock %}
+{% block description %}Simulated checkout for the Epilepscreen demonstration storefront.{% endblock %}
+
+{% block content %}
+<div class="container page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Store · step two</p>
+      <h1>Checkout</h1>
+    </div>
+    <p class="lead">A demonstration of the order path: Python creates the order,
+      the database stores it, and this page shows the receipt.</p>
+  </div>
+
+  <div class="demo-band" role="note" aria-label="Demonstration notice">
+    <span class="demo-band__tag">DEMO CHECKOUT — NO REAL PAYMENT</span>
+    <span class="demo-band__text">
+      No card details are requested, collected or stored. This page creates a record in a
+      local database and nothing else. No money moves and no invoice is sent.
+    </span>
+  </div>
+
+  {% if items %}
+  <div class="checkout-grid">
+    <div>
+      <h2 style="font-size:var(--text-xl);font-weight:400;text-transform:uppercase;margin-bottom:var(--space-md);">
+        Your packs
+      </h2>
+      <ul class="line-items">
+        {% for item in items %}
+        <li class="line-item">
+          <span class="line-item__no num">{{ forloop.counter|stringformat:"02d" }}</span>
+          <span>
+            <span class="line-item__title">{{ item.title }}</span>
+            <span class="line-item__desc">{{ item.description }}</span>
+          </span>
+          <span class="line-item__price num">{{ item.price_display }}</span>
+          {% if items|length > 1 or item.pk %}
+          <form method="post" action="{% url 'remove_from_cart' item.pk %}">
+            {% csrf_token %}
+            <button class="line-item__remove" type="submit">Remove from the demo cart</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="field__hint" style="margin-top:var(--space-md);">
+        Prices are sample values from the seeded catalogue. Edit them in the Django admin.
+        <a href="{% url 'store' %}">Back to the store</a>.
+      </p>
+    </div>
+
+    <form class="summary" method="post" action="{% url 'checkout' %}">
+      {% csrf_token %}
+      <h2>Order summary</h2>
+      <div class="summary__row">
+        <span>{{ item_count }} pack{{ item_count|pluralize }}</span>
+        <span class="num">{{ total }}</span>
+      </div>
+      <div class="summary__row">
+        <span>Delivery</span>
+        <span>None — digital demonstration</span>
+      </div>
+      <div class="summary__row">
+        <span>Tax</span>
+        <span class="num">$0</span>
+      </div>
+      <div class="summary__row summary__row--total">
+        <span>Total due</span>
+        <span class="num">{{ total }}</span>
+      </div>
+
+      <div class="field" style="margin-top:var(--space-md);">
+        <label for="checkout-email">Email for the demonstration receipt</label>
+        <input id="checkout-email" name="email" type="email" autocomplete="email"
+               placeholder="you@example.com" required>
+        <p class="field__hint">Stored with the order row so the confirmation has a name on it.</p>
+      </div>
+
+      <button class="btn btn--primary" type="submit">Confirm demo order</button>
+      <p class="summary__fine">
+        The button calls Django, which writes one <code>purchases</code> row per pack with
+        <code>payment_method = 'demo'</code>. Nothing is charged.
+      </p>
+    </form>
+  </div>
+  {% else %}
+  <div class="empty">
+    <h2>The cart is empty</h2>
+    <p>Pick a pack from the store first. Any of the four sample packs will do — the
+      order path is the same for all of them.</p>
+    <a class="btn btn--primary" href="{% url 'store' %}#order">Choose a pack</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

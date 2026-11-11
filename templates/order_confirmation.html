@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load static epilepscreen_fmt %}
+
+{% block title %}Demo order recorded — Epilepscreen{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="receipt">
+    <p class="receipt__stamp">Demonstration · no payment taken</p>
+    <h1>Order recorded</h1>
+    <p class="lead" style="margin-top:var(--space-sm);">
+      Django wrote the order to the local database. That is the whole transaction:
+      no gateway was contacted and no card existed.
+    </p>
+
+    <div class="receipt__meta">
+      <span class="num">Order #{{ order_number }}</span>
+      <span>{{ placed_at|date:"d M Y, H:i" }}</span>
+      <span>{{ email }}</span>
+    </div>
+
+    <ul class="receipt__lines">
+      {% for purchase in purchases %}
+      <li>
+        <span>
+          {{ purchase.product.title }}
+          <span class="library__meta"> · {{ purchase.get_status_display }} via {{ purchase.payment_method }}</span>
+        </span>
+        <span class="num">{{ purchase.amount_cents|money }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="receipt__total">
+      <span>Total, simulated</span>
+      <span class="num">{{ total }}</span>
+    </div>
+
+    <p class="receipt__note">
+      This record demonstrates the Python order path: a form post, server-side
+      validation, a Django model write, and a rendered receipt. It is not a financial
+      document, it does not grant access to anything, and no email was sent.
+    </p>
+
+    <div class="receipt__actions">
+      <a class="btn btn--primary" href="{% url 'browse' %}">Back to the library</a>
+      <a class="btn" href="{% url 'store' %}">Return to the store</a>
+      <a class="btn" href="{% url 'upload' %}">Screen a video</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

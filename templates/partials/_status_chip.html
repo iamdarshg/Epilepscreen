@@ -1,0 +1,9 @@
+{% if video.rating == 'safe' %}
+<span class="chip chip--safe">Safe</span>
+{% elif video.rating == 'caution' %}
+<span class="chip chip--caution">{{ video.event_count }} event{{ video.event_count|pluralize }}</span>
+{% elif video.rating == 'risk' %}
+<span class="chip chip--risk">{{ video.event_count }} event{{ video.event_count|pluralize }}</span>
+{% else %}
+<span class="chip chip--muted">Not screened</span>
+{% endif %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Upload — Epilepscreen{% endblock %}
+{% block description %}Upload a video and screen it for photosensitive triggers with OpenCV and NumPy.{% endblock %}
+
+{% block content %}
+<div class="container page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">Step one</p>
+      <h1>Add a file to the library</h1>
+    </div>
+    <p class="lead">The screener runs on this machine. Nothing is sent to a third
+      party, and the file is never re-encoded.</p>
+  </div>
+
+  <div class="split">
+    <form class="form-card" method="post" action="{% url 'upload_send' %}"
+          enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="field">
+        <label for="upload-title">Title</label>
+        <input id="upload-title" name="title" type="text" maxlength="200"
+               placeholder="Leave blank to use the file name">
+      </div>
+      <div class="field">
+        <label for="upload-category">Category</label>
+        <select id="upload-category" name="category">
+          <option value="">Detect automatically</option>
+          {% for category in categories %}
+          <option value="{{ category }}">{{ category }}</option>
+          {% endfor %}
+        </select>
+        <p class="field__hint">Portrait clips become Short, long landscape clips become
+          Movie, anything with “official video” in the title becomes Music Video.</p>
+      </div>
+      <div class="field">
+        <label for="upload-file">Video file</label>
+        <input id="upload-file" name="video_file" type="file"
+               accept="video/*,.mp4,.webm,.mov,.avi,.mkv,.m4v,.ogv" required
+               data-file-input="#upload-file-name">
+        <p class="field__hint">MP4, WebM, MOV, AVI or MKV. Up to {{ max_upload_mb }} MB.
+          <span id="upload-file-name" data-file-name>No file chosen.</span></p>
+      </div>
+      <label class="checkline" for="upload-screen">
+        <input id="upload-screen" name="screen" type="checkbox" value="1" checked>
+        <span>Screen it now. OpenCV reads about fifteen frames a second and the report appears
+          when the upload finishes. Leave it off for long films and press
+          <em>Screen this video</em> on the player page instead.</span>
+      </label>
+      <button class="btn btn--primary" type="submit">Upload and screen</button>
+    </form>
+
+    <div>
+      <figure class="upload__plate">
+        <div class="upload__frame" data-slot="upload">
+          <img src="{% static 'epilepscreen/hallmark-camera.jpg' %}" width="1280" height="1032"
+               alt="A camera operator framing a shot with a shoulder camera on a tripod."
+               loading="lazy" decoding="async">
+        </div>
+        <figcaption>Jacek Halicki, CC BY-SA 4.0. A stand-in for your own footage.</figcaption>
+      </figure>
+
+      <h2 style="margin-top:var(--space-xl);font-weight:200;text-transform:uppercase;">What the upload does</h2>
+      <ul class="note-list" style="margin-top:var(--space-md);">
+        <li><strong>Validation</strong> Extension, size and empty-file checks run before
+          anything touches the database.</li>
+        <li><strong>Hashing</strong> <code>hashlib.sha256</code> over the bytes gives a
+          15-hex-digit key, so a second copy of the same file is rejected by the primary key.</li>
+        <li><strong>Metadata</strong> <code>cv2.VideoCapture</code> reads duration and
+          dimensions, which drive the automatic category.</li>
+        <li><strong>Storage</strong> The file is compressed with <code>lzma</code> and kept
+          as a blob in the <code>epilepsy</code> table. Streaming decompresses on the fly.</li>
+        <li><strong>Screening</strong> The detector writes rows into
+          <code>hazard_event</code> and one verdict into <code>analysis</code>.</li>
+      </ul>
+      <p class="field__hint" style="margin-top:var(--space-md);">
+        A clean report means the five detectors found nothing above their thresholds at
+        the analysis frame rate. It is not a guarantee: every report page lists what the
+        method can miss.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'epilepscreen/store.js' %}" defer></script>
+{% endblock %}

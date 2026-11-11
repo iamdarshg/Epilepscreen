@@ -1,0 +1,79 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Epilepscreen{% endblock %}</title>
+<meta name="description" content="{% block description %}Screen a video for photosensitive triggers before anyone watches it.{% endblock %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sofia+Sans+Extra+Condensed:wght@200;400&family=Barlow:wght@300;400&display=swap" rel="stylesheet">
+<link rel="icon" href="{% static 'epilepscreen/favicon.svg' %}" type="image/svg+xml">
+<link rel="stylesheet" href="{% static 'epilepscreen/store.css' %}">
+<link rel="stylesheet" href="{% static 'epilepscreen/pages.css' %}">
+{% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="banner">
+    <div class="container banner__inner">
+      {% block banner %}
+      <p>Photosensitivity screener. Detection is a filter, not a guarantee.</p>
+      <a href="{% url 'store' %}">The store</a>
+      {% endblock %}
+    </div>
+  </div>
+  <div class="bar">
+    <div class="container bar__inner">
+      <a class="wordmark" href="{% url 'index' %}">epilepscreen</a>
+      <nav class="bar__nav" aria-label="Main">
+        <a href="{% url 'browse' %}" {% if nav == 'library' %}aria-current="page"{% endif %}>Library</a>
+        <a href="{% url 'upload' %}" {% if nav == 'upload' %}aria-current="page"{% endif %}>Upload</a>
+        <a href="{% url 'store' %}" {% if nav == 'store' %}aria-current="page"{% endif %}>Store</a>
+        <a class="bar__cart" href="{% url 'checkout' %}" {% if nav == 'checkout' %}aria-current="page"{% endif %}>
+          Cart{% if cart_count %} <span class="num">{{ cart_count }}</span>{% endif %}
+        </a>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  {% if messages %}
+  <div class="container notice-stack" role="status">
+    {% for message in messages %}
+    <p class="notice{% if 'error' in message.tags %} notice--error{% endif %}">{{ message }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <div>
+      <a class="wordmark" href="{% url 'index' %}">epilepscreen</a>
+      <p class="footer__line">Photosensitivity screening for video you already have, or video you find.</p>
+    </div>
+    <nav class="footer__nav" aria-label="Footer">
+      <a href="{% url 'browse' %}">Library</a>
+      <a href="{% url 'upload' %}">Upload</a>
+      <a href="{% url 'store' %}">Store</a>
+      <a href="{% url 'admin:index' %}">Admin</a>
+    </nav>
+    <div class="footer__credits">
+      <p>Photographs:
+        <a href="https://commons.wikimedia.org/wiki/File:Ansambel_SkaMeika%C2%B4.jpg" target="_blank" rel="noopener">Enel Lepik</a>,
+        <a href="https://commons.wikimedia.org/wiki/File:2016_Operator_kamery_w_czasie_pracy.JPG" target="_blank" rel="noopener">Jacek Halicki</a>,
+        CC BY-SA 4.0.</p>
+      <p>Detectors are heuristics. They can miss a trigger.</p>
+    </div>
+  </div>
+</footer>
+
+{% block dialogs %}{% endblock %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

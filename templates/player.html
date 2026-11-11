@@ -1,285 +1,179 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ title }} - Epilepscreen Player</title>
-<style>
-:root {
---bg-primary: #000000;
---bg-secondary: #141414;
---bg-hover: #1f1f1f;
---text-primary: #ffffff;
---text-secondary: #a3a3a3;
---accent: #e50914;
---accent-hover: #f40612;
---border: #333333;
+{% extends "base.html" %}
+{% load static epilepscreen_fmt %}
 
-* { box-sizing: border-box; }
+{% block title %}{{ title }} — Epilepscreen player{% endblock %}
+{% block body_class %}{% if embedded %}is-embedded{% endif %}{% endblock %}
 
-body {
-background: var(--bg-primary);
-color: var(--text-primary);
-font-family: 'Helvetica Neue', Arial, sans-serif;
-margin: 0;
-padding: 0;
-}
+{% block content %}
+<div class="container page--tight">
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="{% url 'browse' %}">Library</a>
+    <span aria-hidden="true">/</span>
+    <span>{{ title }}</span>
+  </nav>
 
-/* Header */
-.header {
-position: fixed;
-top: 0; left: 0; right: 0;
-background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0) 100%);
-display: flex;
-align-items: center;
-justify-content: space-between;
-padding: 20px 4%;
-backdrop-filter: blur(10px);
-z-index: 1000;
-}
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">{{ video.category|default:"Other" }} · {{ video.content_type|default:"video" }}</p>
+      <h1>{{ title }}</h1>
+    </div>
+    <div>
+      <div class="chip-row" style="justify-content:flex-end;">
+        {% if not report.analyzed %}
+        <span class="chip chip--muted">Not screened</span>
+        {% elif report.is_safe and not report.event_count %}
+        <span class="chip chip--safe">No triggers found</span>
+        {% elif report.is_safe %}
+        <span class="chip chip--caution">{{ report.event_count }} window{{ report.event_count|pluralize }}</span>
+        {% else %}
+        <span class="chip chip--risk">{{ report.event_count }} window{{ report.event_count|pluralize }}</span>
+        {% endif %}
+      </div>
+      <p class="lead" style="margin-top:var(--space-sm);text-align:right;">
+        {% if report.analyzed %}
+        Screened {{ report.checked_at|date:"d M Y, H:i" }}.
+        {% else %}
+        The screener has not read this file yet.
+        {% endif %}
+      </p>
+    </div>
+  </div>
 
-.logo {
-font-size: 28px;
-font-weight: bold;
-color: var(--accent);
-text-decoration: none;
-}
+  <div class="player-layout">
+    <div>
+      <div class="stage" data-stage>
+        <video id="player-video" controls preload="auto"
+               src="{{ stream_url }}"
+               data-events-url="{{ events_url }}"
+               data-duration-guard>
+          Your browser cannot play this file.
+          <a href="{{ stream_url }}">Download it instead</a>.
+        </video>
+      </div>
 
-/* Back to browse button */
-.back-btn {
-background: transparent;
-color: var(--text-secondary);
-border: 1px solid var(--border);
-padding: 8px 16px;
-border-radius: 4px;
-cursor: pointer;
-font-size: 14px;
-transition: all 0.2s;
-}
+      <div class="timeline" data-timeline aria-hidden="true">
+        <div class="timeline__playhead" data-playhead style="left:0"></div>
+        {% if not report.events %}<p class="timeline__empty">No hazard windows to show</p>{% endif %}
+      </div>
+      <p class="keyline" style="margin-top:var(--space-xs);">
+        The bar marks every hazard window. Click one to jump there.
+        Keys: <kbd>space</kbd> play/pause, <kbd>n</kbd> next hazard, <kbd>g</kbd> guard on/off.
+      </p>
 
-.back-btn:hover {
-background: var(--bg-hover);
-color: var(--text-primary);
-}
+      <section class="section" style="padding-block:var(--space-xl) 0;border-top:0;" aria-labelledby="events-title">
+        <div class="section__head" style="margin-bottom:var(--space-md);">
+          <h2 id="events-title" style="font-size:var(--text-xl);">Hazard windows</h2>
+          <p class="lead" style="justify-self:end;">
+            {{ report.event_count }} row{{ report.event_count|pluralize }} from
+            <code>hazard_event</code>.
+          </p>
+        </div>
 
-/* Main player container */
-.player-container {
-max-width: 1200px;
-margin: 100px auto 0;
-padding: 24px;
-}
+        {% if report.events %}
+        <div class="table-scroll"><table class="report-table hazard-table">
+          <caption>Times are in minutes:seconds, measured at the analysis frame rate.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Kind</th>
+              <th scope="col">Start</th>
+              <th scope="col">End</th>
+              <th scope="col">Measurement</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in report.events %}
+            <tr>
+              <td class="hazard-kind">{{ event.label }}</td>
+              <td class="num"><button class="seek num" type="button"
+                  data-seek="{{ event.start }}">{{ event.start|clock }}</button></td>
+              <td class="num">{{ event.end|clock }}</td>
+              <td class="num">{{ event.attributes|attrs }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+        {% else %}
+        <p class="library__empty">
+          {% if report.analyzed %}
+          Nothing was flagged above the thresholds. That means the five detectors saw no
+          flash, red flash, colour sweep, high-contrast pattern or moving pattern — not
+          that the file is guaranteed safe.
+          {% else %}
+          Run the screener to fill this table. Python decodes the file, measures every
+          sampled frame and writes the rows.
+          {% endif %}
+        </p>
+        {% endif %}
+      </section>
+    </div>
 
-/* Video info section */
-.video-info {
-display: flex;
-gap: 24px;
-margin-bottom: 20px;
-}
+    <aside class="controls" aria-labelledby="controls-title">
+      <h2 id="controls-title">Protection</h2>
+      <p class="controls__hint" style="margin-top:var(--space-xs);">
+        The overlay is drawn by JavaScript, but the timings come from Python.
+      </p>
 
-/* Video player frame */
-.video-frame {
-background: #000;
-border-radius: 8px;
-overflow: hidden;
-flex: 1;
-min-width: 0;
-}
+      <div class="controls__group">
+        <div class="controls__row">
+          <label for="guard-on">Guard while in a hazard</label>
+          <input id="guard-on" type="checkbox" checked data-guard-toggle>
+        </div>
+        <div class="controls__row">
+          <label for="guard-dim">Dim strength</label>
+          <span class="controls__value" data-dim-value>65%</span>
+        </div>
+        <input id="guard-dim" type="range" min="30" max="95" value="65"
+               step="5" data-dim-range>
+        <div class="controls__row">
+          <label for="guard-pad">Warning padding</label>
+          <span class="controls__value" data-pad-value>0.4 s</span>
+        </div>
+        <input id="guard-pad" type="range" min="0" max="2000" value="400"
+               step="100" data-pad-range>
+      </div>
 
-.video-frame iframe,
-.video-frame video,
-.video-frame audio {
-width: 100%;
-height: auto;
-min-height: 400px;
-}
+      <div class="controls__group">
+        <button class="btn" type="button" data-next-hazard>Jump to next hazard</button>
+        <p class="controls__hint" data-guard-status aria-live="polite">
+          {% if report.events %}Guard armed for {{ report.event_count }} window{{ report.event_count|pluralize }}.{% else %}No windows to guard.{% endif %}
+        </p>
+      </div>
 
-/* Title and metadata */
-.video-title {
-font-size: 28px;
-font-weight: bold;
-margin: 0 0 8px;
-}
+      <div class="controls__group">
+        <div class="verdict verdict--{% if not report.analyzed %}unknown{% elif report.is_safe and not report.event_count %}safe{% elif report.is_safe %}caution{% else %}risk{% endif %}">
+          <span class="verdict__label">
+            {% if not report.analyzed %}Unscreened{% elif report.is_safe %}Clear{% else %}Risky{% endif %}
+          </span>
+          <span class="num">{{ report.event_count }} window{{ report.event_count|pluralize }}</span>
+        </div>
+        {% if report.counts %}
+        <ul class="note-list">
+          {% for kind, count in report.counts.items %}
+          <li><strong>{{ kind|kind_label }}</strong><span class="num">{{ count }} window{{ count|pluralize }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
 
-.video-meta {
-font-size: 14px;
-color: var(--text-secondary);
-display: flex;
-gap: 16px;
-}
-
-.meta-item {
-display: flex;
-gap: 4px;
-}
-
-/* Action buttons */
-.actions {
-display: flex;
-gap: 12px;
-}
-
-.action-btn {
-background: var(--bg-hover);
-color: var(--text-primary);
-border: none;
-padding: 10px 16px;
-border-radius: 6px;
-cursor: pointer;
-font-size: 14px;
-font-weight: 600;
-transition: background 0.2s;
-}
-
-.action-btn:hover {
-background: var(--border);
-}
-
-.action-btn.primary {
-background: var(--accent);
-color: white;
-}
-
-.action-btn.primary:hover {
-background: var(--accent-hover);
-}
-
-/* Hazard events overlay */
-.hazards-list {
-background: var(--bg-secondary);
-border-radius: 8px;
-padding: 16px;
-margin-top: 20px;
-}
-
-.hazard-item {
-background: var(--bg-hover);
-border-radius: 6px;
-padding: 12px;
-margin-bottom: 10px;
-padding: 12px;
-}
-
-.hazard-item:last-child { margin-bottom: 0; }
-
-.hazard-time {
-color: var(--accent);
-font-size: 12px;
-font-weight: 600;
-margin-bottom: 4px;
-}
-
-.hazard-desc {
-font-size: 13px;
-color: var(--text-secondary);
-}
-
-/* Store link */
-.store-link {
-display: inline-block;
-background: var(--accent);
-color: white;
-padding: 10px 20px;
-border-radius: 6px;
-text-decoration: none;
-font-size: 14px;
-font-weight: 600;
-margin-top: 16px;
-}
-
-.store-link:hover {
-background: var(--accent-hover);
-}
-
-/* Loading state */
-.loading {
-display: flex;
-align-items: center;
-justify-content: center;
-height: 400px;
-color: var(--text-secondary);
-}
-
-/* Mobile responsive */
-@media (max-width: 768px) {
-.header { flex-direction: column;
-gap: 12px; }
-.video-info { flex-direction: column;
-}
-}
-</style>
-</head>
-<body>
-
-<div class="header">
-<a href="/" class="logo">epilepscreen</a>
-<button class="back-btn" onclick="window.history.back()">Back</button>
+      <div class="controls__group">
+        <form method="post" action="{{ analyze_url }}" data-screen-form>
+          {% csrf_token %}
+          <button class="btn btn--primary" type="submit" data-screen-button>
+            {% if report.analyzed %}Re-screen this video{% else %}Screen this video{% endif %}
+          </button>
+        </form>
+        <p class="controls__hint" data-screen-status aria-live="polite"></p>
+        <a class="btn" href="{{ screening_url }}" style="margin-top:var(--space-sm);">Read the full report</a>
+      </div>
+    </aside>
+  </div>
 </div>
 
-<div class="player-container">
+<script type="application/json" id="hazard-data">{{ events_json }}</script>
+{% endblock %}
 
-<!-- Video info -->
-<h1 class="video-title">{{ title }}</h1>
+{% block scripts %}
+<script src="{% static 'epilepscreen/epilepscreen.js' %}"></script>
+<script src="{% static 'epilepscreen/player.js' %}"></script>
+{% endblock %}
 
-<!-- Video player -->
-<div class="video-frame" id="video-frame">
-    <div class="loading">Loading video...</div>
-    <iframe id="player" src="{{ stream_url }}" loading="lazy" allow="autoplay; fullscreen" style="display:none;"></iframe>
-</div>
-
-<!-- Actions -->
-<div class="actions">
-<button class="action-btn" onclick="document.getElementById('player').play()">▶ Play</button>
-<button class="action-btn primary" onclick="window.open('{{ store_url }}', '_blank')">🛒 Video Store</button>
-<button class="action-btn" onclick="toggleHazards()">🔔 Hazard Alerts: {{ event_count }}</button>
-</div>
-
-<!-- Hazard events display -->
-<div id="hazards-container" class="hazards-list" style="display:none;">
-<h3>⚠️ Hazard Events</h3>
-<!-- Events inserted dynamically -->
-</div>
-
-<!-- Store link -->
-<a href="{{ store_url }}" class="store-link">🛒 Purchase/Download this video</a>
-
-</div>
-<script>
-let hazardsEnabled = true;
-
-function toggleHazards() {
-const container = document.getElementById('hazards-container');
-const currentEvents = document.querySelectorAll('.hazard-item');
-
-if (hazardsEnabled) {
-container.style.display = container.style.display === 'none' ? 'block' : 'block';
-} else {
-container.style.display = 'none';
-}
-hazardsEnabled = !hazardsEnabled;
-
-// Update button text
-const btn = document.querySelector('.actions button:last-child');
-btn.innerHTML = hazardsEnabled 
-    ? '🔔 Hazard Alerts: {{ event_count }}' 
-    : '🔕 Hide Hazard Alerts';
-}
-
-// Fetch hazard events if available
-fetch('{{ events_url }}').then(res => res.json()).then(data => {
-const container = document.getElementById('hazards-container');
-const { events } = data;
-
-// Build hazard HTML
-const html = events.length ? events.map(e => `
-<div class="hazard-item">
-<div class="hazard-time">⏱ ${e.start_time.toFixed(2)}s - ${e.end_time.toFixed(2)}s</div>
-<div class="hazard-desc">👉 ${e.kind}: ${e.attributes ? JSON.stringify(e.attributes) : 'Event detected'}</div>
-</div>`).join('') : '<p style="color:#888;">No hazard events recorded</p>';
-
-container.innerHTML = html;
-container.style.display = 'block';
-});
-</script>
-
-</body>
-</html>

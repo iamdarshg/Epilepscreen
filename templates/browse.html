@@ -1,365 +1,84 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Epilepscreen - Browse Videos</title>
-<style>
-:root {
-  --bg-primary: #141414;
-  --bg-secondary: #181818;
-  --bg-hover: #202020;
-  --text-primary: #ffffff;
-  --text-secondary: #b3b3b3;
-  --accent: #e50914;
-  --accent-hover: #f40612;
-  --border: #333333;
-  --card-shadow: rgba(0,0,0,0.5);
-  --transition: 200ms;
-}
+{% extends "base.html" %}
+{% load static %}
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+{% block title %}Library — Epilepscreen{% endblock %}
 
-body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Helvetica Neue', Arial, sans-serif;
-}
+{% block content %}
+<div class="container page">
+  <div class="page-head">
+    <div>
+      <p class="eyebrow">The library</p>
+      <h1>Screened video, by title</h1>
+    </div>
+    <p class="lead">
+      {{ library_count }} file{{ library_count|pluralize }} stored.
+      {% if q or category %}Showing {{ result_count }} match{{ result_count|pluralize:"es" }}.{% endif %}
+    </p>
+  </div>
 
-.header {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,.9) 0%, rgba(0,0,0,0) 100%);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 4%;
-  backdrop-filter: blur(10px);
-  z-index: 1000;
-}
-
-.logo {
-  font-size: 28px;
-  font-weight: bold;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.nav {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-}
-
-.nav a {
-  color: var(--text-primary);
-  text-decoration: none;
-  font-size: 14px;
-  transition: color var(--transition);
-}
-
-.nav a:hover {
-  color: var(--accent);
-}
-
-.container {
-  max-width: 1600px;
-  margin: 80px 4% 24px;
-  padding: 24px;
-}
-
-.section {
-  margin-bottom: 24px;
-}
-
-.section-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-}
-
-.search-bar {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
-}
-
-.search-bar input {
-  flex: 1;
-  min-width: 200px;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-}
-
-.search-bar input:focus {
-  border-color: var(--accent);
-}
-
-.search-bar button {
-  padding: 12px 24px;
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.search-bar button:hover {
-  background: var(--accent-hover);
-}
-
-.filters {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
-.filter-pill {
-  padding: 6px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  color: var(--text-secondary);
-  text-decoration: none;
-  font-size: 13px;
-  transition: all var(--transition);
-}
-
-.filter-pill:hover,
-.filter-pill.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
-
-.video-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 40px;
-}
-
-.card {
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform var(--transition), box-shadow var(--transition);
-  position: relative;
-}
-
-.card:hover {
-  transform: scale(1.05);
-  box-shadow: 0 8px 32px var(--card-shadow);
-}
-
-.card-img {
-  width: 100%;
-  height: 160px;
-  background: linear-gradient(180deg, #2a2a2a 0%, var(--bg-secondary) 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 48px;
-  color: #444;
-}
-
-.card-info {
-  padding: 12px;
-}
-
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0 0 4px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-right: 4px;
-  margin-top: 4px;
-}
-
-.badge-format {
-  background: rgba(229,9,20,0.2);
-  color: var(--accent);
-}
-
-.badge-safe {
-  background: rgba(46,204,113,0.2);
-  color: #2ecc71;
-}
-
-.badge-warning {
-  background: rgba(241,196,15,0.2);
-  color: #f1c40f;
-}
-
-.badge-caution {
-  background: rgba(243,156,18,0.2);
-  color: #f39c12;
-}
-
-.badge-premium {
-  background: rgba(155,89,182,0.2);
-  color: #9b59b6;
-}
-
-.store-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--accent);
-  color: white;
-  padding: 10px 20px;
-  border-radius: 6px;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 600;
-  margin-top: 8px;
-  transition: background var(--transition);
-}
-
-.store-btn:hover {
-  background: var(--accent-hover);
-}
-
-.category-pill {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  margin-top: 8px;
-  display: inline-block;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 80px 20px;
-  color: var(--text-secondary);
-}
-
-.empty-state h2 {
-  font-size: 24px;
-  margin-bottom: 8px;
-}
-
-footer {
-  text-align: center;
-  padding: 40px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-@media (max-width: 768px) {
-  .video-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
-  .search-bar { flex-direction: column; }
-}
-</style>
-</head>
-<body>
-
-<div class="header">
-  <a href="/" class="logo">epilepscreen</a>
-  <nav class="nav">
-    <a href="/">Home</a>
-    <a href="/browse/">Browse</a>
-    <a href="/store/">Store</a>
-  </nav>
-</div>
-
-<div class="container">
-
-  <form class="search-bar" method="GET" action="/browse/">
-    <input type="text" name="q" placeholder="Search videos..." value="{{ q|default:'' }}">
-    <button type="submit">Search</button>
+  <form class="toolbar" method="get" action="{% url 'browse' %}" role="search">
+    <div class="search">
+      <label class="visually-hidden" for="q">Search titles</label>
+      <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search titles">
+      {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+      <button type="submit">Search</button>
+    </div>
+    <div class="filters" aria-label="Filter by category">
+      <a class="filter" href="{% url 'browse' %}{% if q %}?q={{ q|urlencode }}{% endif %}"
+         {% if not category %}aria-current="true"{% endif %}>All</a>
+      {% for item in categories %}
+      <a class="filter"
+         href="{% url 'browse' %}?category={{ item.name|urlencode }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"
+         {% if category == item.name %}aria-current="true"{% endif %}>
+        {{ item.name }} <span class="num">{{ item.count }}</span>
+      </a>
+      {% endfor %}
+    </div>
   </form>
 
-  {% if categories %}
-  <div class="filters">
-    <a href="/browse/" class="filter-pill {% if not category %}active{% endif %}">All</a>
-    {% for cat in categories %}
-    <a href="/browse/?category={{ cat }}" class="filter-pill {% if category == cat %}active{% endif %}">{{ cat }}</a>
-    {% endfor %}
-  </div>
-  {% endif %}
-
   {% if videos %}
-  <div class="section">
-    <h2 class="section-title">Browse Videos ({{ videos|length }} results)</h2>
-  </div>
-  <div class="video-grid">
+  <ul class="library-grid">
     {% for video in videos %}
-    <div class="card" onclick="window.location='/player/{{ video.hash }}/'">
-      <div class="card-img">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8 5v14l11-7z"/>
-        </svg>
-      </div>
-      <div class="card-info">
-        <h3 class="card-title">{{ video.title|default:"Untitled Video" }}</h3>
-        {% if video.category %}
-        <span class="category-pill">{{ video.category }}</span>
-        {% endif %}
-        {% if video.video_format %}
-        <span class="badge badge-format">{{ video.video_format }}</span>
-        {% endif %}
-        {% if video.safety_rating == "safe" %}
-        <span class="badge badge-safe">Safe</span>
-        {% elif video.safety_rating == "warning" %}
-        <span class="badge badge-warning">Warning</span>
-        {% elif video.safety_rating == "caution" %}
-        <span class="badge badge-caution">Caution</span>
-        {% endif %}
-        {% if video.is_premium %}
-        <span class="badge badge-premium">Premium</span>
-        {% endif %}
-        <br>
-        <a href="/stream/{{ video.hash }}/" class="store-btn">
-          <svg fill="currentColor" viewBox="0 0 24 24" width="16" height="16">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
-          {% if video.is_premium and video.price_cents %}
-          Buy ${{ video.price_cents|floatformat:2 }}
-          {% else %}
-          Watch Now
-          {% endif %}
-        </a>
-      </div>
-    </div>
+    <li>
+      <a class="library-card" href="{% url 'player' video.hash %}">
+        <span class="library-card__top">
+          <span class="library-card__index num">{{ forloop.counter|stringformat:"02d" }}</span>
+          {% include "partials/_status_chip.html" with video=video %}
+        </span>
+        <span>
+          <span class="library-card__title">{{ video.title|default:"Untitled" }}</span>
+          <span class="library-card__meta">
+            {{ video.category|default:"Other" }} ·
+            {% if video.analyzed and video.kinds %}
+              {{ video.kind_labels|join:", " }}
+            {% elif video.analyzed %}
+              no triggers found
+            {% else %}
+              run the screener to see its report
+            {% endif %}
+          </span>
+        </span>
+        <span class="library-card__foot">
+          <span class="library-card__open">Play and screen</span>
+          <span class="library-card__meta num">{{ video.time_uploaded|date:"d M Y" }}</span>
+        </span>
+      </a>
+    </li>
     {% endfor %}
-  </div>
+  </ul>
   {% else %}
-  <div class="empty-state">
+  <div class="empty">
+    {% if q or category %}
+    <h2>Nothing matches</h2>
+    <p>No stored video matches that search. Try a shorter word, or clear the filter.</p>
+    <a class="btn" href="{% url 'browse' %}">Clear the search</a>
+    {% else %}
     <h2>No videos found</h2>
-    <p>Try a different search term or category.</p>
+    <p>The library is empty. Upload a clip and the Python screener will build its
+      hazard report as part of the upload.</p>
+    <a class="btn btn--primary" href="{% url 'upload' %}">Upload a video</a>
+    {% endif %}
   </div>
   {% endif %}
-
 </div>
-
-<footer>
-  <p>&copy; 2025 Epilepscreen Video Platform. All rights reserved.</p>
-</footer>
-
-</body>
-</html>
+{% endblock %}
