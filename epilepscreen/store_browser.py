@@ -358,7 +358,6 @@ def capture_video(response, url, filename, data):
                 "VALUES (%s, %s, %s, %s, %s, %s)",
                 (video_hash, now, title, 'Other', content_type, lzma.compress(data)),
             )
-        connection.commit()
     except IntegrityError:
         saved = False
         with connection.cursor() as cursor:
@@ -408,3 +407,4 @@ def browser_context(source, target_url=None, back=None):
         'display_url': target_url or source['url'],
         'back_href': _local_back(back or ''),
     }
+
