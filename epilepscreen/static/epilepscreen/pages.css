@@ -636,7 +636,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-.table-scroll table {
+.table-scroll .hazard-table {
   min-width: 34rem;
 }
 
