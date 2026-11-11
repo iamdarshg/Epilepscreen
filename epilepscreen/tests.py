@@ -494,3 +494,22 @@ class HealthTests(TestCase):
         payload = self.client.get('/health/').json()
         self.assertEqual(payload['status'], 'ok')
         self.assertIn(payload['engine'], ('sqlite', 'mysql'))
+
+
+class AdminTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.user = User.objects.create_superuser('teacher', 't@example.com', 'pw-for-tests')
+        self.client.force_login(self.user)
+
+    def test_admin_lists_the_screening_tables(self):
+        video_hash = store_video(b'admin-bytes', title='Admin clip')
+        save_analysis(video_hash, type('P', (), {'is_safe': True, 'risk_flags': []})())
+        for url in ('/admin/epilepscreen/videorecord/',
+                    '/admin/epilepscreen/hazardevent/',
+                    '/admin/epilepscreen/analysis/',
+                    '/admin/epilepscreen/storeproduct/'):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, url)
+        self.assertContains(self.client.get('/admin/epilepscreen/videorecord/'),
+                            'Admin clip')

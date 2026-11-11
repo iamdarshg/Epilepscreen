@@ -15,7 +15,7 @@ had just been deleted and rebuilt.
 | --- | --- | --- |
 | Django system check | `python manage.py check` | `System check identified no issues (0 silenced).` |
 | Migration drift | `python manage.py makemigrations --check --dry-run` | `No changes detected` |
-| Django test suite | `python manage.py test` | **71 tests, OK** |
+| Django test suite | `python manage.py test` | **72 tests, OK** |
 | Detector test suite | `python -m pytest photosensitive/tests -q` | **35 passed** |
 | Overlay widget tests | `node epilepscreen/static/epilepscreen/epilepscreen.test.js` | `OK: all overlay widget tests passed` |
 | Schema build from scratch | `python sql.py` | all migrations applied, including `0003_sql_tables` |
@@ -146,7 +146,29 @@ the red band → **Read the full report** → **Store** → *Add to the demo car
    `ffmpeg` the clips are `mp4v` and will screen correctly but will not play in
    a browser.
 
-## 6. Files worth opening first
+## 6. Test changes — what was replaced and why
+
+The old `epilepscreen/tests.py` (38 tests) was written against a database layer
+that no longer exists: it patched `epilepscreen.views.get_db_connection` with
+`mysql.connector` mocks, asserted on raw SQL strings, and expected `/embed/` to
+return 500 when the database was down. Those tests could not pass against the
+current code without re-introducing the MySQL-only layer, so they were replaced
+rather than deleted:
+
+| Old test | Replaced by |
+| --- | --- |
+| `IndexTests` (mocked cursor rows) | `HomeTests` / `BrowseTests` against a real test database |
+| `BrowseTests` (asserted `%gig%` reached a mock) | search and category filters asserted on real rows |
+| `UploadTests` (oversized file only) | 6 upload tests: extension, empty, oversized, success, duplicate, inline screening |
+| `StreamTests` / `EmbedTests` (expected 500) | range/206/416/404 streaming tests and an embed render test |
+| `AnalysisStoreTests` (asserted `REPLACE INTO` text) | `save_events` replace semantics and one-row-per-video verdict, checked in SQL |
+| `AnalyzeSensitivityTests` (3-key cfg echo) | full 9-key effective config, overrides echoed separately, out-of-range fallback |
+
+Nothing was removed to make the suite green: the count went from 38 mocked tests
+to 72 tests that exercise the real pipeline, plus 6 new detector tests in
+`photosensitive/tests/test_sampling.py` (35 total there).
+
+## 7. Files worth opening first
 
 | File | Why |
 | --- | --- |
@@ -156,3 +178,4 @@ the red band → **Read the full report** → **Store** → *Add to the demo car
 | `epilepscreen/migrations/0003_sql_tables.py` | the schema, per engine |
 | `templates/player.html` + `static/epilepscreen/player.js` | how timestamps reach the overlay |
 | `PROJECT_EXPLANATION.md` | the viva script |
+
