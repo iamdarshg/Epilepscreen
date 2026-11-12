@@ -168,11 +168,35 @@ movie       BLOB (lzma)       attributes  JSON
                               created_at  DATETIME
 ```
 
-Store tables (ORM): `store_products`, `purchases`, `store_subscriptions`,
-`video_categories`, `video_formats`, `videos`, `video_purchases`.
+Store tables (ORM): `store_products`, `purchases`, `customer_spend`,
+`store_subscriptions`, `video_categories`, `video_formats`, `videos`,
+`video_purchases`.
+
+The two that matter for money:
+
+```
+store_products                     purchases                    customer_spend
+--------------                     ---------                    --------------
+id            PK                   id           PK              email          PK
+title         TEXT                 product_id   FK              total_paise    INT
+product_type  VARCHAR(50)          email        VARCHAR(254)     order_count    INT
+price_paise   INT  (₹499 = 49900)  amount_paise INT             currency       'INR'
+active        BOOL                 currency     'INR'           first_order_at DATETIME
+                                   payment_method 'demo'        last_order_at  DATETIME
+                                   status       'completed'
+```
+
+Money is always integer **paise** — ₹499 is `49900` — so no total is ever affected
+by floating-point error, and `money.format_paise` renders it as `₹499` with Indian
+digit grouping.
 
 `purchases.payment_method` is `'demo'` for every order the site creates — that
 column is the record that no real payment happened.
+
+`customer_spend` holds one row per email: the running total, how many orders made
+it, and when they were placed. `epilepscreen/orders.py` writes it in the same
+transaction as the order lines, using `F('total_paise') + amount` so the addition
+happens inside MySQL rather than in Python.
 
 ---
 
@@ -279,6 +303,48 @@ limits; compression alters colours; and a clean report is not a guarantee.
 The store exists to demonstrate the Python order path. Taking real payments
 would need a gateway, PCI obligations and a legal entity — none of which belong
 in a school project, so the site records a demo order and says so on every page.
+
+**Why are prices stored in paise and not as decimals?**
+A `FLOAT` cannot represent 0.1 exactly, so sums drift by a paisa and comparisons
+fail. Integers in the smallest unit are exact: ₹499 is `49900`, and the display
+layer adds the symbol and the commas. This is how real systems store money.
+
+**How is the total spend per email kept?**
+In `customer_spend`, one row per address. The checkout writes the order lines and
+updates that row inside a single transaction:
+
+```sql
+UPDATE customer_spend
+SET total_paise = total_paise + 49900,
+    order_count = order_count + 1,
+    last_order_at = NOW()
+WHERE email = 'someone@example.com';
+```
+
+The addition happens in SQL (`F('total_paise') + amount`), so two checkouts at
+the same moment add up instead of overwriting each other.
+
+**Why store the total instead of summing `purchases` every time?**
+Two reasons: one primary-key lookup instead of a `GROUP BY` over every order, and
+it makes the idea of an aggregate table explicit. The cost is that it must be
+maintained — it is correct only because the order lines and the total are written
+in the same transaction, which is exactly what `transactions.atomic()` is for.
+
+**How would you check the total is not wrong?**
+Recompute it and compare:
+
+```sql
+SELECT p.email, s.total_paise AS stored, SUM(p.amount_paise) AS recomputed
+FROM purchases p JOIN customer_spend s ON s.email = p.email
+GROUP BY p.email, s.total_paise
+HAVING stored <> recomputed;
+```
+
+An empty result means every stored total matches its orders.
+
+**What is Indian digit grouping?**
+`₹1,00,000`, not `₹100,000`: the last three digits, then pairs.
+`money.group_indian` implements it as pure string work.
 
 ---
 

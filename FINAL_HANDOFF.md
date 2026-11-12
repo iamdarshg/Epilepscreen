@@ -16,10 +16,12 @@ had just been deleted and rebuilt.
 | --- | --- | --- |
 | Django system check | `python manage.py check` | `System check identified no issues (0 silenced).` |
 | Migration drift | `python manage.py makemigrations --check --dry-run` | `No changes detected` |
-| Django test suite | `python manage.py test` | **72 tests, OK** |
+| Django test suite | `python manage.py test` | **80 tests, OK** |
 | Detector test suite | `python -m pytest photosensitive/tests -q` | **35 passed** |
 | Overlay widget tests | `node epilepscreen/static/epilepscreen/epilepscreen.test.js` | `OK: all overlay widget tests passed` |
-| Schema build from scratch | `python sql.py` | all migrations applied, including `0003_sql_tables` |
+| Schema build from scratch | `python sql.py` | all migrations applied, including `0003_sql_tables` and `0005_inr_prices_and_customer_spend` |
+| Migration round-trip | `migrate epilepscreen 0004` then `migrate` | reverses and re-applies cleanly; prices and totals stay consistent |
+| Per-email totals | `python manage.py spend_report` | table printed from `customer_spend` (₹998 for a 2-order email) |
 | Demo clips | `python manage.py make_samples` | 5 clips written, H.264 (ffmpeg present) |
 | Browser sweep | `python scripts/qa_screens.py` | **0 problems, 0 console errors, 19 screenshots** |
 
@@ -31,8 +33,9 @@ screenshots:
 * the overlay widget is attached (`.epilepscreen-overlay` exists);
 * the timeline draws **2** hazard segments from the Python events;
 * clicking a timestamp moves `video.currentTime` (0.48 s);
-* the checkout page contains `DEMO CHECKOUT` and no card fields;
-* the confirmation page contains `Order recorded`.
+* the checkout page contains `DEMO CHECKOUT`, rupee prices and no card fields;
+* the confirmation page contains `Order recorded` and the per-email total
+  (`Total spend stored for …`).
 
 Screenshots are in `qa/` (gitignored): `desktop-home`, `desktop-library`,
 `desktop-library-filled`, `desktop-upload`, `desktop-store`,
@@ -105,6 +108,23 @@ Detector output for the five generated clips (`python manage.py analyze_media`):
 * Checkout is explicitly simulated: `DEMO CHECKOUT — NO REAL PAYMENT`, no card
   fields anywhere, receipt states that nothing was charged.
 
+**Rupees and the per-email total**
+
+* Every price is now in rupees, stored as integer paise: ₹499 / ₹799 / ₹1,999 /
+  ₹3,999 (`49900` / `79900` / `199900` / `399900`). `epilepscreen/money.py` is the
+  only formatter; it groups digits the Indian way (`₹1,00,000`).
+* New table `customer_spend` (one row per email: `total_paise`, `order_count`,
+  `first_order_at`, `last_order_at`, `currency='INR'`), written by
+  `epilepscreen/orders.py` in the same transaction as the order lines, using
+  `UPDATE ... SET total_paise = total_paise + %s` so concurrent orders add up.
+* The receipt shows the stored total for that address; `python manage.py
+  spend_report` prints the whole table; the admin lists it read-only.
+* Migration `0005_inr_prices_and_customer_spend` renames the money columns,
+  re-prices the catalogue, creates the table and back-fills it from existing
+  `purchases` with `GROUP BY email` + `SUM(amount_paise)`. Verified by running it
+  backwards to `0004` and forwards again: prices, order lines and totals all
+  ended up consistent (2 × ₹499 = ₹998 for `student@example.com`).
+
 ## 4. Commands for the demonstration
 
 ```powershell
@@ -118,7 +138,15 @@ python manage.py runserver
 Then: <http://127.0.0.1:8000/> → **Upload** → `samples/strobe.mp4` → the player
 opens with a red *2 windows* chip → press play and watch the picture dim inside
 the red band → **Read the full report** → **Store** → *Add to the demo cart* →
-**Checkout** → *Confirm demo order*.
+**Checkout** → *Confirm demo order* → the receipt shows the rupee total and what
+this email has spent so far.
+
+To show the stored total from the terminal:
+
+```powershell
+python manage.py spend_report
+python manage.py spend_report --email student@example.com
+```
 
 ## 5. Outstanding limitations (stated, not hidden)
 
@@ -131,8 +159,9 @@ the red band → **Read the full report** → **Store** → *Add to the demo car
    coverage). They are not validated against patient data, and the site never
    claims protection from seizures.
 3. **MySQL path not exercised here.** No MySQL server was reachable from this
-   machine, so the MySQL branch of `0003_sql_tables` and the `mysqlclient`
-   backend are written but unverified. SQLite is verified end to end.
+   machine, so the MySQL branch of `0003_sql_tables`, the `customer_spend` DDL and
+   the `mysqlclient` backend are written but unverified. SQLite is verified end to
+   end, including the `UPDATE ... total_paise = total_paise + %s` aggregate.
 4. **Inline screening cap.** Files longer than 15 minutes are stored but not
    screened during the upload request; the player's *Screen this video* button
    runs it on demand. There is no background queue.
@@ -141,11 +170,17 @@ the red band → **Read the full report** → **Store** → *Add to the demo car
    service would store media.
 6. **Source browser needs the internet.** The store's in-page reader proxies six
    named sources; without network access it shows its error panel.
-7. **Store is fictional.** Prices are seeded sample values, orders are local
+7. **Store is fictional.** Prices are seeded sample rupee values, orders are local
    rows, and no email or invoice is ever sent.
-8. **`samples/*.mp4` is gitignored.** Regenerate with `make_samples`; without
-   `ffmpeg` the clips are `mp4v` and will screen correctly but will not play in
-   a browser.
+8. **`customer_spend` is maintained by the application, not the database.** It is
+   correct because `orders.create_demo_order` writes it with the order lines in one
+   transaction; anything that inserts `purchases` rows by hand would leave the
+   total stale. The reconciliation query in `CODE_GUIDE.md` §7.5 catches that.
+9. **The spend total is keyed on the exact address.** `A@x.com` and `a@x.com` are
+   two rows; nothing normalises case.
+10. **`samples/*.mp4` is gitignored.** Regenerate with `make_samples`; without
+    `ffmpeg` the clips are `mp4v` and will screen correctly but will not play in
+    a browser.
 
 ## 6. Test changes — what was replaced and why
 
@@ -166,7 +201,7 @@ rather than deleted:
 | `AnalyzeSensitivityTests` (3-key cfg echo) | full 9-key effective config, overrides echoed separately, out-of-range fallback |
 
 Nothing was removed to make the suite green: the count went from 38 mocked tests
-to 72 tests that exercise the real pipeline, plus 6 new detector tests in
+to 80 tests that exercise the real pipeline, plus 6 new detector tests in
 `photosensitive/tests/test_sampling.py` (35 total there).
 
 ## 7. Files worth opening first
@@ -180,4 +215,5 @@ to 72 tests that exercise the real pipeline, plus 6 new detector tests in
 | `templates/player.html` + `static/epilepscreen/player.js` | how timestamps reach the overlay |
 | `PROJECT_EXPLANATION.md` | the viva script |
 | `CODE_GUIDE.md` | every file, every function, every SQL statement, the database and the MySQL connection |
+
 

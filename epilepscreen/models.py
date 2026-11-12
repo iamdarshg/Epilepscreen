@@ -58,7 +58,7 @@ class Video(models.Model):
     
     # Store functionality
     is_premium = models.BooleanField(default=False)
-    price_cents = models.IntegerField(default=0)
+    price_paise = models.IntegerField(default=0)
     
     class Meta:
         ordering = ['-created_at']
@@ -88,16 +88,16 @@ class StoreProduct(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     product_type = models.CharField(max_length=50, choices=PRODUCT_TYPES, default='format')
-    price_cents = models.IntegerField(validators=[MinValueValidator(0)])
+    price_paise = models.IntegerField(validators=[MinValueValidator(0)])
     duration_seconds = models.IntegerField(default=0)
     thumbnail = models.URLField(max_length=2000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['price_cents']
+        ordering = ['price_paise']
         db_table = 'store_products'
         indexes = [
-            models.Index(fields=['active', 'price_cents'], name='store_active_price_idx'),
+            models.Index(fields=['active', 'price_paise'], name='store_active_price_idx'),
             models.Index(fields=['title'], name='store_title_idx'),
             models.Index(fields=['product_type'], name='store_type_idx'),
         ]
@@ -121,8 +121,8 @@ class Purchase(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    amount_cents = models.IntegerField(null=True, blank=True)
-    currency = models.CharField(max_length=3, default='USD')
+    amount_paise = models.IntegerField(null=True, blank=True)
+    currency = models.CharField(max_length=3, default='INR')
     
     class Meta:
         ordering = ['-created_at']
@@ -159,8 +159,8 @@ class VideoPurchase(models.Model):
     VIDEO = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='video_purchases')
     PURCHASED_BY = models.CharField(max_length=255)
     PURCHASED_AT = models.DateTimeField(auto_now_add=True)
-    price_cents = models.IntegerField(null=True, blank=True)
-    currency = models.CharField(max_length=3, default='USD')
+    price_paise = models.IntegerField(null=True, blank=True)
+    currency = models.CharField(max_length=3, default='INR')
     
     class Meta:
         db_table = 'video_purchases'
@@ -205,6 +205,42 @@ class VideoCategory(models.Model):
             models.Index(fields=['slug'], name='category_slug_idx'),
             models.Index(fields=['is_active'], name='category_active_idx'),
         ]
+
+
+
+class CustomerSpend(models.Model):
+    """How much each email address has spent in the demonstration store.
+
+    One row per email, kept up to date inside the same transaction that writes
+    the `purchases` rows, so the total can never drift from the orders. Money is
+    stored in paise (integer) — never a float — and rendered as ₹ by
+    `epilepscreen.money.format_paise`.
+    """
+
+    email = models.EmailField(primary_key=True)
+    total_paise = models.IntegerField(default=0)
+    order_count = models.IntegerField(default=0)
+    currency = models.CharField(max_length=3, default='INR')
+    first_order_at = models.DateTimeField(null=True, blank=True)
+    last_order_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-total_paise']
+        db_table = 'customer_spend'
+        verbose_name = 'Customer spend'
+        verbose_name_plural = 'Customer spend'
+        indexes = [
+            models.Index(fields=['-total_paise'], name='spend_total_idx'),
+            models.Index(fields=['last_order_at'], name='spend_last_idx'),
+        ]
+
+    @property
+    def total_display(self):
+        from epilepscreen.money import format_paise
+        return format_paise(self.total_paise)
+
+    def __str__(self):
+        return f'{self.email}: {self.total_display} across {self.order_count} order(s)'
 
 
 # --- Legacy SQL tables -----------------------------------------------------

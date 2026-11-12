@@ -26,7 +26,7 @@
           {{ purchase.product.title }}
           <span class="library__meta"> · {{ purchase.get_status_display }} via {{ purchase.payment_method }}</span>
         </span>
-        <span class="num">{{ purchase.amount_cents|money }}</span>
+        <span class="num">{{ purchase.amount_paise|rupees }}</span>
       </li>
       {% endfor %}
     </ul>
@@ -36,9 +36,19 @@
       <span class="num">{{ total }}</span>
     </div>
 
+    <div class="receipt__spend">
+      <span class="receipt__spend-label">Total spend stored for {{ email }}</span>
+      <span class="num receipt__spend-value">{{ spend_total }}</span>
+      <span class="receipt__spend-meta">
+        across {{ spend_orders }} demonstration order{{ spend_orders|pluralize }} ·
+        one row in <code>customer_spend</code>
+      </span>
+    </div>
+
     <p class="receipt__note">
       This record demonstrates the Python order path: a form post, server-side
-      validation, a Django model write, and a rendered receipt. It is not a financial
+      validation, Django model writes, the running total in
+      <code>customer_spend</code>, and a rendered receipt. It is not a financial
       document, it does not grant access to anything, and no email was sent.
     </p>
 

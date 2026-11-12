@@ -44,6 +44,8 @@ from epilepscreen.media import (
     suggest_category,
 )
 from epilepscreen.models import Purchase, StoreProduct
+from epilepscreen.money import format_paise
+from epilepscreen.orders import create_demo_order, spend_for
 from epilepscreen.store_browser import (
     BrowserError,
     browser_context,
@@ -782,17 +784,14 @@ CART_SESSION_KEY = 'cart'
 ORDER_SESSION_KEY = 'last_order'
 
 
-def _money(cents):
-    """Render a cent amount as a short dollar string."""
-    cents = int(cents or 0)
-    amount = f'{cents / 100:,.2f}'.rstrip('0').rstrip('.')
-    return f'${amount}'
+def _money(paise):
+    """Render a paise amount as ₹, e.g. 49900 -> ₹499 (Indian grouping)."""
+    return format_paise(paise)
 
 
 def _decorate_product(product):
-    amount = f'{int(product.price_cents or 0) / 100:,.2f}'.rstrip('0').rstrip('.')
-    product.price_amount = amount
-    product.price_display = f'${amount}'
+    product.price_amount = format_paise(product.price_paise)
+    product.price_display = product.price_amount
     product.kind_label = PRODUCT_TYPE_LABELS.get(product.product_type, product.product_type)
     return product
 
@@ -800,7 +799,7 @@ def _decorate_product(product):
 def _products():
     try:
         return [_decorate_product(p) for p in
-                StoreProduct.objects.filter(active=True).order_by('price_cents')]
+                StoreProduct.objects.filter(active=True).order_by('price_paise')]
     except DatabaseError:
         return []
 
@@ -813,16 +812,16 @@ def _cart_ids(request):
 def _cart_context(request):
     ids = _cart_ids(request)
     products = list(StoreProduct.objects.filter(pk__in=ids, active=True)
-                    .order_by('price_cents')) if ids else []
+                    .order_by('price_paise')) if ids else []
     if ids and not products:
         request.session[CART_SESSION_KEY] = []
     by_id = {p.pk: _decorate_product(p) for p in products}
     ordered = [by_id[i] for i in ids if i in by_id]
-    total = sum(int(p.price_cents or 0) for p in ordered)
+    total = sum(int(p.price_paise or 0) for p in ordered)
     return {
         'cart_items': ordered,
         'cart_count': len(ordered),
-        'cart_total_cents': total,
+        'cart_total_paise': total,
         'cart_total': _money(total),
     }
 
@@ -905,7 +904,7 @@ def add_to_cart(request, product_id):
         return JsonResponse({
             'success': True,
             'cart_count': len(ids),
-            'product': {'name': product.title, 'price': _money(product.price_cents)},
+            'product': {'name': product.title, 'price': _money(product.price_paise)},
         })
     messages.success(request, f'"{product.title}" is in the demo cart.')
     return redirect('checkout')
@@ -992,8 +991,8 @@ def checkout(request):
     if not cart['cart_items'] and raw_product.isdigit():
         single = StoreProduct.objects.filter(pk=int(raw_product), active=True).first()
     items = cart['cart_items'] or ([_decorate_product(single)] if single else [])
-    total_cents = (cart['cart_total_cents'] if cart['cart_items']
-                   else int(single.price_cents or 0) if single else 0)
+    total_paise = (cart['cart_total_paise'] if cart['cart_items']
+                   else int(single.price_paise or 0) if single else 0)
 
     if request.method == 'POST':
         email = (request.POST.get('email') or '').strip()
@@ -1004,20 +1003,9 @@ def checkout(request):
         if error:
             messages.error(request, error)
         else:
-            with transaction.atomic():
-                purchases = [
-                    Purchase.objects.create(
-                        product=product,
-                        email=email,
-                        # 'demo' records that this was a simulated confirmation.
-                        payment_method='demo',
-                        status='completed',
-                        completed_at=timezone.now(),
-                        amount_cents=product.price_cents,
-                        currency='USD',
-                    )
-                    for product in items
-                ]
+            # orders.create_demo_order writes the purchase rows *and* updates the
+            # per-email total in customer_spend, in one transaction.
+            purchases, _spend = create_demo_order(email, items)
             request.session[ORDER_SESSION_KEY] = [p.pk for p in purchases]
             request.session[CART_SESSION_KEY] = []
             request.session.modified = True
@@ -1026,8 +1014,8 @@ def checkout(request):
     return render(request, 'checkout.html', {
         'items': items,
         'item_count': len(items),
-        'total_cents': total_cents,
-        'total': _money(total_cents),
+        'total_paise': total_paise,
+        'total': _money(total_paise),
         'cart_count': len(items),
         'demo_store': getattr(settings, 'DEMO_STORE', True),
     })
@@ -1047,14 +1035,19 @@ def order_confirmation(request):
         messages.info(request, 'No demo order to show. Choose a pack to start one.')
         return redirect('store')
 
-    total = sum(int(p.amount_cents or 0) for p in purchases)
+    total = sum(int(p.amount_paise or 0) for p in purchases)
+    email = purchases[0].email
+    spend = spend_for(email)
     return render(request, 'order_confirmation.html', {
         'purchases': purchases,
         'order_number': purchases[0].pk,
-        'email': purchases[0].email,
+        'email': email,
         'total': _money(total),
-        'total_cents': total,
+        'total_paise': total,
         'placed_at': purchases[0].created_at,
+        'spend': spend,
+        'spend_total': spend.total_display if spend else _money(0),
+        'spend_orders': spend.order_count if spend else 0,
         'cart_count': 0,
     })
 
@@ -1069,5 +1062,7 @@ __all__ = [
     'run_screening', 'screening_report', 'sensitivity_from_request',
     'get_db_connection', 'get_video_store', 'decorate_videos',
 ]
+
+
 
 

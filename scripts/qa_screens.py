@@ -130,6 +130,7 @@ def main():
         page.wait_for_url('**/checkout/**')
         page.wait_for_load_state('networkidle')
         check('DEMO CHECKOUT' in page.content(), 'checkout: demo label missing')
+        check('₹' in page.content(), 'checkout: prices are not in rupees')
         check('card number' not in page.content().lower() or
               'no card details' in page.content().lower(),
               'checkout: card field found')
@@ -140,6 +141,8 @@ def main():
         page.click('form.summary button[type="submit"]')
         page.wait_for_load_state('networkidle')
         check('Order recorded' in page.content(), 'confirmation: heading missing')
+        check('Total spend stored for' in page.content(),
+              'confirmation: per-email total missing')
         shoot(page, 'desktop-confirmation')
 
         # ---- responsive breakpoints on a couple of pages ----

@@ -353,14 +353,17 @@ Django's connection.
 
 #### Store views
 
-* `_money(cents)` — `1900 → "$19"`.
-* `_decorate_product(product)` — adds `price_amount`, `price_display`,
-  `kind_label` for templates.
-* `_products()` — active products ordered by price; swallows `DatabaseError` so
-  the page still renders before `migrate`.
+* `_money(paise)` — thin wrapper over `money.format_paise`, so `49900 → "₹499"`
+  with Indian digit grouping. Called for cart totals, product cards and JSON.
+* `_decorate_product(product)` — adds `price_amount` (formatted `"₹499"`),
+  `price_display` (same string, kept as the template-facing name) and
+  `kind_label`.
+* `_products()` — active products ordered by `price_paise`; swallows
+  `DatabaseError` so the page still renders before `migrate`.
 * `_cart_ids(request)` — the session cart as a list of ints, defensively filtered.
 * `_cart_context(request)` — resolves the cart against the catalogue (removing
-  ids that are gone), returns items, count and total.
+  ids that are gone), returns `cart_items`, `cart_count`, `cart_total_paise`
+  (integer) and `cart_total` (formatted).
 * `_recent_videos(limit=4)` / `_library_count()` — small read helpers.
 * `_store_context(request, selected_product_id=None)` — everything `store.html`
   needs: products, hero product, selection, external stores, categories, recent
@@ -378,25 +381,28 @@ Django's connection.
   502 on `BrowserError`, 404 for a disallowed URL.
 * `_checkout_email_error(email)` — the only field validation in the checkout.
 * `checkout(request)` — GET builds the summary (session cart, or a single
-  `?product=` for a direct link); POST validates the email then creates one
-  `Purchase` per item inside `transaction.atomic()`, clears the cart, stores the
-  purchase ids in the session, redirects to the receipt.
-* `order_confirmation(request)` — reads those ids (or `?order=<pk>`), renders
-  totals and the "no payment taken" note.
+  `?product=` for a direct link); POST validates the email and then hands the
+  items to `orders.create_demo_order`, which writes the purchase rows **and** the
+  per-email total in one transaction. Clears the cart, remembers the purchase ids
+  in the session, redirects to the receipt.
+  * `order_confirmation(request)` — reads those ids (or `?order=<pk>`), renders the
+  lines, the simulated total, the per-email total from `customer_spend`
+  (`spend_total`, `spend_orders`) and the "no payment taken" note.
 
-### 3.9 `epilepscreen/models.py` (261 lines)
+### 3.9 `epilepscreen/models.py` (307 lines)
 
-Nine models. Two groups.
+Ten models. Two groups.
 
 **ORM-owned tables (Django creates and migrates them):**
 
 | Model | Table | Key fields |
 | --- | --- | --- |
-| `Video` | `videos` | Legacy extended-metadata model (`url`, `bitrate`, `hdr_enabled`, `safety_rating`, `price_cents`). Present and migrated, but the live pipeline uses `VideoRecord` instead; it is the richer schema the project started from. |
-| `StoreProduct` | `store_products` | `active`, `title`, `description`, `product_type`, `price_cents`, `duration_seconds`, `thumbnail`. The catalogue. |
-| `Purchase` | `purchases` | FK `product`, `email`, `payment_method`, `card_last4` (always blank — no card is ever collected), `status`, `completed_at`, `amount_cents`, `currency`. The demo order rows. |
+| `Video` | `videos` | Legacy extended-metadata model (`url`, `bitrate`, `hdr_enabled`, `safety_rating`, `price_paise`). Present and migrated, but the live pipeline uses `VideoRecord` instead; it is the richer schema the project started from. |
+| `StoreProduct` | `store_products` | `active`, `title`, `description`, `product_type`, `price_paise`, `duration_seconds`, `thumbnail`. The catalogue, priced in paise (₹499 = `49900`). |
+| `Purchase` | `purchases` | FK `product`, `email`, `payment_method`, `card_last4` (always blank — no card is ever collected), `status`, `completed_at`, `amount_paise`, `currency` (default `INR`). The demo order lines. |
+| `CustomerSpend` | `customer_spend` | `email` (PK), `total_paise`, `order_count`, `currency`, `first_order_at`, `last_order_at`. The running total per address; `total_display` renders it as ₹. |
 | `VideoFormat` | `video_formats` | Reference specs (resolution, fps range, bitrate range). Unused by the current UI. |
-| `VideoPurchase` | `video_purchases` | Per-video purchase history. Unused by the current UI. |
+| `VideoPurchase` | `video_purchases` | Per-video purchase history (`price_paise`, `currency`). Unused by the current UI. |
 | `StoreSubscription` | `store_subscriptions` | Premium plan rows. Unused by the current UI. |
 | `VideoCategory` | `video_categories` | Hierarchical categories with slug/icon/ordering. Unused by the current UI; categories currently live as a text column on `epilepsy`. |
 
@@ -420,15 +426,19 @@ is documented in Python as well as in SQL.
 | `0002_seed_store_products.py` | `seed_products()` inserts four sample packs if the table is empty; `remove_products()` reverses it. |
 | `0003_sql_tables.py` | `create_tables()` runs per-vendor `CREATE TABLE IF NOT EXISTS` DDL for `epilepsy`, `hazard_event`, `analysis` (and an index on `hazard_event.video_hash` for SQLite). `drop_tables()` reverses. |
 | `0004_analysis_hazardevent_videorecord.py` | `CreateModel` entries with `managed=False` — state only, no DDL. Keeps Django's model state in sync with `models.py`. |
+| `0005_inr_prices_and_customer_spend.py` | Renames `*_cents` to `*_paise` on `purchases`, `store_products`, `videos`, `video_purchases`; sets `currency` default to `INR`; re-prices the four packs (₹499 / ₹799 / ₹1,999 / ₹3,999); creates `customer_spend`; re-prices any old order line from its product and back-fills the totals from existing `purchases` with `GROUP BY email` + `SUM(amount_paise)`. Reversible: restores the old prices and empties the spend table. |
 
-### 3.11 `epilepscreen/admin.py` (74 lines)
+### 3.11 `epilepscreen/admin.py` (95 lines)
 
-* `StoreProductAdmin` — list/filter/search the catalogue.
+* `StoreProductAdmin` — list/filter/search the catalogue (price shown in paise).
 * `PurchaseAdmin` — list/filter/search orders (including `payment_method`, so
   every `demo` row is obvious).
 * `VideoRecordAdmin` — `has_add_permission`/`has_change_permission` return
   `False` (the analyser owns those rows); delete is allowed.
 * `HazardEventAdmin`, `AnalysisAdmin` — same read-only treatment.
+* `CustomerSpendAdmin` — every field read-only, ordered by `-total_paise`, with
+  `total_display` so the admin shows ₹ rather than raw paise. The table is
+  written only by `orders.create_demo_order`.
 
 ### 3.12 `epilepscreen/analysis_store.py` (59 lines)
 
@@ -442,7 +452,45 @@ is documented in Python as well as in SQL.
   re-upload under a new hash or a manual reset. Exposed for maintenance; no view
   calls it today.
 
-### 3.13 `epilepscreen/media.py` (106 lines)
+### 3.13 `epilepscreen/money.py` (60 lines)
+
+The only place that turns stored integers into readable money. Prices are whole
+paise in the database (`49900` is ₹499) because binary floating point cannot
+represent 0.1 exactly and a store must never round a total by accident.
+
+* `CURRENCY_SYMBOL = '₹'`, `CURRENCY_CODE = 'INR'` — one definition, imported by
+  the view helper, the template filter and the management command.
+* `group_indian(digits)` — `'1234567' → '12,34,567'`: last three digits, then
+  pairs, which is the Indian convention (not `1,234,567`). Pure string work.
+* `format_paise(paise)` — `49900 → '₹499'`, `49950 → '₹499.50'`, `None → '₹0'`,
+  negatives keep their sign. Drops the fraction when it is zero.
+* `rupees_to_paise(text)` — `'₹1,999'`/`'19.5'`/`'499'` → paise; raises
+  `ValueError` on anything else (`''`, `'abc'`, `'1.2.3'`, `'12.345'`). Used when
+  a human types a price, so a hand-entered amount can never be stored as a float.
+
+### 3.14 `epilepscreen/orders.py` (127 lines)
+
+Placing a demonstration order, and keeping the per-email total in step. The view
+calls one function; the rules live here so they can be tested without a browser.
+
+* `spend_for(email)` — the stored `CustomerSpend` row for an address, or `None`.
+* `record_spend(email, amount_paise, when=None)` — adds to the running total.
+  `get_or_create` for the first order (inside a nested `atomic()`, so a duplicate
+  email race cannot poison the caller's transaction), then
+  `CustomerSpend.objects.filter(pk=...).update(total_paise=F('total_paise') + amount, ...)`
+  for later ones. The `F()` expression makes the addition happen **in the
+  database** (`UPDATE customer_spend SET total_paise = total_paise + 49900`), so
+  two orders arriving at once add up instead of overwriting each other. Returns
+  the refreshed row.
+* `create_demo_order(email, items, when=None)` — inside one
+  `transaction.atomic()`: one `Purchase` per product
+  (`payment_method='demo'`, `status='completed'`, `currency='INR'`,
+  `amount_paise=product.price_paise`), then `record_spend(email, total)`. Returns
+  `(purchases, spend)`. Raises `ValueError` for an empty item list. No gateway is
+  contacted and no card data exists in the call.
+* `spend_summary(limit=10)` — top spenders by total, for tooling and tests.
+
+### 3.15 `epilepscreen/media.py` (106 lines)
 
 Pure helpers, no database.
 
@@ -459,7 +507,7 @@ Pure helpers, no database.
   count; returns `{"duration_s", "width", "height"}` or `None` when the file has
   no readable video track. `None` is a normal answer, not an error.
 
-### 3.14 `epilepscreen/store_browser.py` (410 lines)
+### 3.16 `epilepscreen/store_browser.py` (410 lines)
 
 The server-side reader behind the store's sources panel.
 
@@ -496,16 +544,18 @@ The server-side reader behind the store's sources panel.
 * `browser_context(source, target_url, back)` — the shell's context
   (`source_name`, `source_url`, `display_url`, `back_href`).
 
-### 3.15 `epilepscreen/templatetags/epilepscreen_fmt.py` (53 lines)
+### 3.17 `epilepscreen/templatetags/epilepscreen_fmt.py` (61 lines)
 
 * `clock(seconds)` — `7.4 → "0:07.4"`, for hazard timestamps.
 * `kind_label(kind)` — event kind → label.
 * `attrs(dict)` — `{"flash_rate": 15.0}` → `"flash_rate 15.0"` for the
   measurement column.
-* `money(cents)` — `1900 → "$19"`, `1999 → "$19.99"` (the receipt filter; using
-  `floatformat` on cents printed `$1900.00`).
+* `rupees(paise)` — the receipt filter: `49900 → "₹499"`, `499450 →
+  "₹4,994.50"`. Delegates to `money.format_paise` so grouping is defined once.
+  `money = rupees` is kept as an alias so older templates keep rendering.
+  (Before the rupee change this filter was `money(cents)` and printed `$`.)
 
-### 3.16 `epilepscreen/management/commands/`
+### 3.18 `epilepscreen/management/commands/`
 
 **`analyze_media.py`** — `python manage.py analyze_media <path> [--hash N] [--fps 15]`.
 `add_arguments` defines them; `handle` runs `analyze_video_file`, optionally
@@ -540,7 +590,17 @@ the detector without the web UI.
   +faststart`, replacing the file in place; on failure it deletes the temp file
   and warns.
 
-### 3.17 `photosensitive/` — the detector
+**`spend_report.py`** — `python manage.py spend_report [--limit 20] [--email x]`.
+
+* `_console_safe(text)` — returns the string with `₹` swapped for `Rs. ` when the
+  console's encoding cannot carry it. A `cmd.exe` window defaults to cp1252, and
+  a `UnicodeEncodeError` from a report is a bad way to discover that.
+* `Command.handle` — one plain SQL read of `customer_spend` (see §4.7), printed as
+  a table with the total per email and a grand total. `--email` narrows it to one
+  address. This is the command to run during the demonstration: it prints exactly
+  what the checkout stored.
+
+### 3.19 `photosensitive/` — the detector
 
 **`config.py` (27 lines)** — `DEFAULTS` dict: `flash_delta 40.0`, `flash_window
 10`, `flash_limit 3`, `red_floor 0.25`, `red_window 15`, `color_threshold 0.4`,
@@ -613,11 +673,11 @@ imports it inside functions so the rest of the package tests without a build.
   `analyze_frames`. Raises `ValueError` when fewer than two frames decode
   (unsupported codec, audio-only, corrupt file).
 
-### 3.18 Tests
+### 3.20 Tests
 
 | File | Covers |
 | --- | --- |
-| `epilepscreen/tests.py` (515 lines) | The real pipeline against a temporary database: home, browse search/category, six upload cases, screening + storage + timestamps, sensitivity parsing, detector integration, streaming (200/206/416/404), the demo cart and checkout, health, admin. Helpers `_write_clip`, `_solid`, `clip_bytes(kind)`, `store_video(raw)`, `upload_file(raw)`. |
+| `epilepscreen/tests.py` (515 lines) | The real pipeline against a temporary database: home, browse search/category, six upload cases, screening + storage + timestamps, sensitivity parsing, detector integration, streaming (200/206/416/404), the rupee catalogue, the demo cart and checkout, the per-email total, health, admin. Helpers `_write_clip`, `_solid`, `clip_bytes(kind)`, `store_video(raw)`, `upload_file(raw)`. |
 | `epilepscreen/test_media.py` | Content types, category suggestion, `probe_media` on a generated clip. |
 | `epilepscreen/test_ingest.py` | File discovery, insert parameters, deterministic content hash, duplicate handling, size skip, auto category, missing file. |
 | `photosensitive/tests/test_luminance.py` | Black = 0, white = 1, green brighter than blue, map matches the function. |
@@ -630,7 +690,7 @@ imports it inside functions so the rest of the package tests without a build.
 | `photosensitive/tests/test_sampling.py` | Real encoded clips: container fps, effective fps per step, alternating frames not lost to aliasing, events inside the analysed span, calm clip safe, unreadable file raises. |
 | `scripts/qa_screens.py` | Not a test suite but the browser gate: drives the site with Playwright, asserts status codes, expected text, overlay attachment, decoded duration, timeline segments, seeking, the demo label, the receipt; writes 19 screenshots to `qa/`. |
 
-### 3.19 Templates in detail
+### 3.21 Templates in detail
 
 | Template | Blocks / structure |
 | --- | --- |
@@ -641,8 +701,8 @@ imports it inside functions so the rest of the package tests without a build.
 | `player.html` | Breadcrumbs, head with chips and screened-at, `.stage` video, timeline, hazard table, `aside.controls` (guard toggle, dim slider, padding slider, next hazard, verdict, per-kind counts, re-screen form, report link), embedded event JSON. |
 | `screening.html` | Stat strip (windows, kinds, fps, verdict), "detectors that fired", "every window", method list, limitations block. |
 | `store.html` | Banner override, hero with price counter, range list + order form (posts to `add_to_cart`), sources grid, upload section, sample report table, recently captured list, buy bar, source-browser `<dialog>`. |
-| `checkout.html` | `DEMO CHECKOUT — NO REAL PAYMENT` band, line items with remove forms, order summary with email field and confirm button, fine print about `payment_method = 'demo'`. |
-| `order_confirmation.html` | Receipt: stamp, order number, date, email, line items, simulated total, "not a financial document" note, three exit buttons. |
+| `checkout.html` | `DEMO CHECKOUT — NO REAL PAYMENT` band, line items with ₹ prices and remove forms, order summary with email field and confirm button, fine print about `payment_method = 'demo'`. |
+| `order_confirmation.html` | Receipt: stamp, order number, date, email, rupee line items, simulated total, the stored per-email total from `customer_spend`, "not a financial document" note, three exit buttons. |
 | `store_browser.html` | Standalone reader shell: source name, URL, back/store buttons, sanitised body, captured/error states, `postMessage` back to the parent. |
 | `partials/_status_chip.html` | One chip from `video.rating` + `video.event_count`. |
 
@@ -650,9 +710,10 @@ imports it inside functions so the rest of the package tests without a build.
 
 ## 4. Every SQL statement and what it is for
 
-All application SQL lives in three files: `views.py`, `analysis_store.py`,
-`store_browser.py`. Migrations contain the DDL. Values are **always** passed as
-`%s` parameters — Django rewrites them to `?` for SQLite and to `%s` for MySQL.
+All application SQL lives in four files: `views.py`, `analysis_store.py`,
+`store_browser.py` and the `spend_report` management command. Migrations contain
+the DDL. Values are **always** passed as `%s` parameters — Django rewrites them to
+`?` for SQLite and to `%s` for MySQL.
 
 ### 4.1 Schema (DDL) — `migrations/0003_sql_tables.py`
 
@@ -720,6 +781,27 @@ Why the two dialects: `BLOB` vs `LONGBLOB` (a ≥ 4 GB vs 64 KB blob), `REAL` vs
 `FLOAT`, `TEXT` vs `JSON`, and `AUTOINCREMENT` vs `AUTO_INCREMENT`. Everything
 uses `IF NOT EXISTS` so a database already built by the old `sql.py` is left
 untouched. `drop_tables()` reverses in child-first order.
+
+The store tables are created by Django from the models, not by hand. The one that
+matters for the money path is `customer_spend` (migration `0005`); the SQL MySQL
+receives is:
+
+```sql
+CREATE TABLE `customer_spend` (
+    `email` varchar(254) NOT NULL PRIMARY KEY,
+    `total_paise` int NOT NULL,
+    `order_count` int NOT NULL,
+    `currency` varchar(3) NOT NULL,
+    `first_order_at` datetime(6) NULL,
+    `last_order_at` datetime(6) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE INDEX `spend_total_idx` ON `customer_spend` (`total_paise` DESC);
+CREATE INDEX `spend_last_idx`  ON `customer_spend` (`last_order_at`);
+```
+
+SQLite gets the same columns with `INTEGER`/`TEXT`-style types and the email as
+the primary key. Integer paise, no floats, and the address itself as the key.
 
 ### 4.2 `epilepsy` — the video library
 
@@ -910,9 +992,54 @@ DELETE FROM hazard_event WHERE video_hash = %s;
 
 `clear_analysis`, `delete_video`.
 
-### 4.5 Health
+### 4.5 `customer_spend` — the running total per email
 
-**17.**
+**17. Read the total (management command)**
+
+```sql
+SELECT email, total_paise, order_count, currency, last_order_at
+FROM customer_spend
+[WHERE email = %s]
+ORDER BY total_paise DESC
+LIMIT %s;
+```
+
+`spend_report` — the one hand-written query against this table. `--email` adds the
+`WHERE`; the limit is always bound as a parameter.
+
+**18. Create the first row for an address (ORM)**
+
+```sql
+INSERT INTO customer_spend
+    (email, total_paise, order_count, currency, first_order_at, last_order_at)
+VALUES (%s, %s, 1, 'INR', %s, %s);
+```
+
+`orders.record_spend` via `get_or_create`. The email is the primary key, so the
+database itself refuses a second row for the same address.
+
+**19. Add to an existing total (ORM, with `F()`)**
+
+```sql
+UPDATE customer_spend
+SET total_paise = total_paise + %s,
+    order_count = order_count + 1,
+    last_order_at = %s
+WHERE email = %s;
+```
+
+This is what `F('total_paise') + amount` compiles to. The arithmetic runs **in
+the database**, so two checkouts for the same email arriving at the same time add
+up instead of overwriting each other. A plain `row.total_paise += amount` in
+Python would be a read-modify-write race.
+
+`select_for_update()` is deliberately *not* used: SQLite does not support it
+(`NotSupportedError`), and the `F()` update plus the primary key already give the
+right result on both engines.
+
+### 4.6 Health
+
+**20.**
 
 ```sql
 SELECT 1;
@@ -921,27 +1048,34 @@ SELECT 1;
 `health` — the cheapest possible round trip that proves the connection, the
 credentials and the schema's database all work. Returns 200/503.
 
-### 4.6 ORM queries (Django generates the SQL)
+### 4.7 ORM queries (Django generates the SQL)
 
 | Where | Equivalent SQL |
 | --- | --- |
-| `_products()` | `SELECT * FROM store_products WHERE active = 1 ORDER BY price_cents ASC` |
-| `_cart_context` | `SELECT * FROM store_products WHERE id IN (...) AND active = 1 ORDER BY price_cents` |
+| `_products()` | `SELECT * FROM store_products WHERE active = 1 ORDER BY price_paise ASC` |
+| `_cart_context` | `SELECT * FROM store_products WHERE id IN (...) AND active = 1 ORDER BY price_paise` |
 | `add_to_cart` / `product_detail` | `SELECT * FROM store_products WHERE id = %s AND active = 1 LIMIT 1` |
-| `checkout` POST | `INSERT INTO purchases (product_id, email, payment_method, card_last4, status, created_at, completed_at, amount_cents, currency) VALUES (...)` per item |
+| `orders.create_demo_order` | `INSERT INTO purchases (product_id, email, payment_method, card_last4, status, created_at, completed_at, amount_paise, currency) VALUES (..., 'demo', '', 'completed', ..., 'INR')` per item |
+| `orders.record_spend` | the INSERT/UPDATE pair in §4.5 |
 | `order_confirmation` | `SELECT * FROM purchases JOIN store_products ... WHERE id IN (...)` (`select_related`) |
+| `order_confirmation` spend | `SELECT * FROM customer_spend WHERE email = %s LIMIT 1` |
 | `_store_context` recent order | `SELECT * FROM purchases JOIN store_products WHERE id = %s LIMIT 1` |
 
 The ORM is used for the store because those models are ordinary Django models;
 the screening tables are queried with hand-written SQL because that SQL is part
 of what the project demonstrates.
 
-### 4.7 Statements that look like they should exist but do not
+### 4.8 Statements that look like they should exist but do not
 
 * No `UPDATE hazard_event` — events are replaced wholesale, never edited.
 * No `SELECT *` on `epilepsy` — the blob is always named explicitly or excluded.
 * No `DROP`/`TRUNCATE` in application code; only the migration's reverse.
 * No `LIKE` with user input concatenated into the string — always a parameter.
+* No `SUM()` on the request path — the total is read from `customer_spend`, not
+  recomputed from `purchases`. `SUM(amount_paise)` appears only in the migration
+  that back-filled the table and in `orders.spend_summary()`.
+* No `SELECT ... FOR UPDATE` — see the note in §4.5; `F()` plus the primary key
+  does the job on both engines.
 
 ---
 
@@ -970,12 +1104,17 @@ Everything above that line is engine-agnostic:
 
 | Owner | Tables | Created by | Written by |
 | --- | --- | --- | --- |
-| Django ORM | `videos`, `store_products`, `purchases`, `store_subscriptions`, `video_categories`, `video_formats`, `video_purchases` | `0001_initial` | ORM |
+| Django ORM | `videos`, `store_products`, `purchases`, `customer_spend`, `store_subscriptions`, `video_categories`, `video_formats`, `video_purchases` | `0001_initial` (`customer_spend`: `0005`) | ORM |
 | Hand-written SQL | `epilepsy`, `hazard_event`, `analysis` | `0003_sql_tables` (per-vendor DDL) | `views.VideoStore`, `analysis_store`, `store_browser`, `ingest_media` |
 
 The three SQL tables also have `managed = False` models, which is a
 documentation device: the admin can list them, `makemigrations --check` stays
 silent, and `models.py` describes the schema the SQL actually creates.
+
+`customer_spend` is the one table whose contents are derived from another table.
+It is not a cache that can be rebuilt lazily: it is written in the same
+transaction as the order lines, so reading it always matches the orders that
+exist.
 
 ### 5.3 The upload blob
 
@@ -1013,8 +1152,12 @@ distinction drives the `unknown` / `safe` / `caution` / `risk` chips.
 * `save_events` — `transaction.atomic()` around the delete + `executemany`.
 * `delete_video`, `clear_analysis` — `transaction.atomic()` around the child
   deletes.
-* `checkout` POST — `transaction.atomic()` around one `Purchase` per cart item,
-  so a failure part-way leaves no half order.
+* `orders.create_demo_order` — `transaction.atomic()` around the purchase rows
+  **and** the `customer_spend` update, so a failure part-way leaves neither a
+  half order nor an inflated total.
+* `orders.record_spend` — a nested `atomic()` around its `get_or_create`, which
+  gives that insert a savepoint: if two checkouts race for the same new address,
+  the loser retries without poisoning the order transaction.
 * Tests wrap each case in its own transaction and roll it back, which is why the
   test suite never touches `db.sqlite3`.
 
@@ -1024,8 +1167,10 @@ distinction drives the `unknown` / `safe` / `caution` / `risk` chips.
 | --- | --- | --- |
 | primary key | `epilepsy.hash` | every lookup, and the dedupe guarantee |
 | `idx_hazard_video` / `idx_video` | `hazard_event.video_hash` | every event query filters by it |
-| `store_active_price_idx` | `store_products(active, price_cents)` | catalogue order |
-| `purchase_*` | `purchases(email / status / product / completed_at)` | admin filtering |
+| `store_active_price_idx` | `store_products(active, price_paise)` | catalogue order |
+| `purchase_*` | `purchases(email / status / product / completed_at)` | admin filtering, and the migration's `GROUP BY email` back-fill |
+| `spend_total_idx` | `customer_spend(total_paise DESC)` | the report's `ORDER BY total_paise DESC` |
+| `spend_last_idx` | `customer_spend(last_order_at)` | "who ordered recently" |
 | `video_*` | `videos(...)` | the legacy model's own indexes |
 
 The library's `ORDER BY time_uploaded DESC` has no index; at a few hundred rows
@@ -1035,9 +1180,11 @@ that is fine, and it is listed as a known weak point.
 
 ```
 0001_initial              ORM tables
-0002_seed_store_products  four sample packs
+0002_seed_store_products  four sample packs (dollar cent prices)
 0003_sql_tables           epilepsy / hazard_event / analysis (per vendor)
 0004_…                    unmanaged model state only, no DDL
+0005_inr_prices_and_…     *_cents → *_paise, INR defaults, rupee prices,
+                          customer_spend + back-fill from purchases
 ```
 
 `python manage.py migrate` builds a working database on either engine;
@@ -1048,25 +1195,37 @@ is part of the test routine to prove no model change is missing a migration.
 
 ## 6. The demonstration order ("cost") path
 
-There is no cost calculation beyond `price_cents × count`. What exists is a
-working order record, and it is deliberately honest about being fake.
+The arithmetic is `price_paise × count`, summed per email. What exists is a
+working order record plus a running total, and the whole path is deliberately
+honest about being fake.
 
-### 6.1 The catalogue
+### 6.1 The catalogue, in rupees
 
-`store_products` is seeded by migration `0002` with four packs
-($19 / $29 / $79 / $149). Prices are stored as **integer cents** — never floats —
-so totals are exact. `_money()` and the `money` filter only format for display.
+`store_products` is seeded by migration `0002` (in dollars) and re-priced by
+`0005` to rupee values:
+
+| Pack | Price | Stored as |
+| --- | --- | --- |
+| Screening pack | ₹499 | `49900` |
+| Music video pack | ₹799 | `79900` |
+| Premium shelf | ₹1,999 | `199900` |
+| Research package | ₹3,999 | `399900` |
+
+Prices are **integer paise** — never floats — so a total is exact. `_money()` and
+the `rupees` filter only format for display, using Indian digit grouping
+(`₹1,00,000`, not `₹100,000`). `money.format_paise` is the single implementation;
+`money.rupees_to_paise` goes the other way for anything typed by a human.
 
 ### 6.2 The cart
 
-Held in the Django session (`'cart'` = list of product ids), not in the
-database. `add_to_cart` appends, `remove_from_cart` filters, `_cart_context`
-resolves ids against the live catalogue (so a deleted product silently drops out)
-and computes the total in cents.
+Held in the Django session (`'cart'` = list of product ids), not in the database.
+`add_to_cart` appends, `remove_from_cart` filters, `_cart_context` resolves ids
+against the live catalogue (so a deleted product silently drops out) and sums
+`price_paise`.
 
 Why the session: a cart is per-visitor ephemeral state, and Django's session
-store already gives that with a signed cookie. No `cart_items` table, no
-user accounts.
+store already gives that with a signed cookie. No `cart_items` table, no user
+accounts.
 
 ### 6.3 The checkout
 
@@ -1074,13 +1233,22 @@ user accounts.
 
 1. cart must be non-empty, else redirect back to the store with a message;
 2. `django.core.validators.validate_email` — the only validation;
-3. inside `transaction.atomic()`, one `Purchase` per item:
-   `payment_method='demo'`, `status='completed'`, `amount_cents=product.price_cents`,
-   `currency='USD'`, `card_last4=''`;
+3. `orders.create_demo_order(email, items)` runs one transaction that does two
+   things:
+   * one `Purchase` per item — `payment_method='demo'`, `status='completed'`,
+     `amount_paise=product.price_paise`, `currency='INR'`, `card_last4=''`;
+   * `orders.record_spend(email, total)` — the `customer_spend` row: first order
+     inserts it, later orders `UPDATE ... SET total_paise = total_paise + %s`
+     with `F()`, plus `order_count + 1` and a new `last_order_at`;
 4. clear the session cart, remember the purchase ids, redirect to `/order/`.
 
 `completed_at` uses `timezone.now()` — a naive `datetime.now()` triggers a Django
 warning because `USE_TZ = True`.
+
+The total is stored, not derived. `customer_spend` answers "how much has this
+address spent" with a primary-key lookup instead of a `GROUP BY` over every order
+it ever placed, and it can never disagree with `purchases` because both writes
+share a transaction.
 
 ### 6.4 What is deliberately absent
 
@@ -1091,13 +1259,26 @@ warning because `USE_TZ = True`.
 * The page carries a `DEMO CHECKOUT — NO REAL PAYMENT` band, the button says
   *Confirm demo order*, and the receipt says in plain text that it is not a
   financial document.
+* No GST, tax, discount or refund logic: a demo total is `sum(price_paise)`,
+  full stop.
 
 ### 6.5 Reading the money back
 
-`order_confirmation` sums `amount_cents` across the purchases in the session (or
-`?order=<pk>` for a direct link) and renders them through the `money` filter.
-That is the entire "accounts" side of the project: integer cents in, formatted
-string out, one row per item.
+Three ways, all reading the same rows:
+
+1. **The receipt** — `order_confirmation` sums `amount_paise` over the session's
+   purchases (or `?order=<pk>`), renders each line through `rupees`, and shows the
+   stored per-email total from `customer_spend`:
+   *Total spend stored for someone@example.com — ₹1,497 across 3 demonstration
+   orders · one row in `customer_spend`.*
+2. **The command** — `python manage.py spend_report` prints every address, its
+   order count, its total and its last order, plus a grand total, from one SQL
+   `SELECT` on `customer_spend`. `--email` narrows it to one row.
+3. **The admin** — *Customer spend*, ordered by `-total_paise`, all fields
+   read-only, totals rendered as ₹ by the model's `total_display` property.
+
+That is the entire "accounts" side of the project: integer paise in, formatted
+string out, one row per item and one row per address.
 
 ---
 
@@ -1194,7 +1375,27 @@ python manage.py migrate
 `migrate` creates the ORM tables and runs `0003_sql_tables`, which takes the
 MySQL branch of the DDL (`LONGBLOB`, `JSON`, `AUTO_INCREMENT`, `ENGINE=InnoDB`,
 `utf8mb4`). If the schema already exists from the old `sql.py`, every statement
-is `IF NOT EXISTS`, so nothing is dropped or recreated.
+is `IF NOT EXISTS`, so nothing is dropped or recreated. `0005` then renames the
+money columns, sets the rupee prices, creates `customer_spend` and back-fills it
+with a single `GROUP BY email` aggregate over `purchases`.
+
+Checking the total against the server, without Django:
+
+```sql
+SELECT email, total_paise, order_count, last_order_at
+FROM customer_spend
+ORDER BY total_paise DESC;
+
+-- does the stored total agree with the order lines?
+SELECT p.email, s.total_paise AS stored, SUM(p.amount_paise) AS recomputed
+FROM purchases p
+JOIN customer_spend s ON s.email = p.email
+GROUP BY p.email, s.total_paise
+HAVING stored <> recomputed;      -- must return no rows
+```
+
+That second query is the reconciliation check; run it after a demonstration and
+an empty result means the aggregate table and the order lines agree.
 
 ### 7.6 Failure modes and what the site does
 
@@ -1245,8 +1446,25 @@ string, which is what makes the sensitivity sliders possible.
 7. **`Videos`/`VideoFormat`/`VideoPurchase`/`StoreSubscription`/`VideoCategory`
    are migrated but unused** — the richer schema the project started with.
    Categories live as a text column on `epilepsy` instead.
-8. **MySQL branch unverified.** Written and reasoned through, but no MySQL server
-   was reachable from this machine; only SQLite was exercised end to end.
-9. **The source browser is a reader, not a browser.** Scripts are stripped, so
-   some sources will show a mostly empty page; that is a deliberate safety
-   trade-off, not a bug.
+8. **`customer_spend` is maintained in application code, not by a trigger or a
+   generated column.** It is correct because `create_demo_order` writes both
+   tables in one transaction; a script that inserted `purchases` rows directly
+   would leave the total stale. The reconciliation query in §7.5 is the check.
+9. **The stored total is per exact address.** `Student@Example.com` and
+   `student@example.com` are two rows; nothing normalises case. Admins see what
+   the buyer typed.
+10. **Rupee formatting is display-only.** No currency conversion, no rounding
+    rules beyond `divmod`, and no locale-aware formatter: `money.group_indian`
+    implements the one convention the store needs.
+11. **`manage.py spend_report` falls back to `Rs. 499`** on a console whose
+    code page cannot encode `₹` (Windows `cmd.exe` default). The web pages are
+    unaffected — they are served as UTF-8.
+12. **MySQL branch unverified.** Written and reasoned through, but no MySQL server
+    was reachable from this machine; only SQLite was exercised end to end. That
+    includes `customer_spend`: the table, the `F()` update and the report query
+    are portable SQL, but they have only run on SQLite here.
+13. **The source browser is a reader, not a browser.** Scripts are stripped, so
+    some sources will show a mostly empty page; that is a deliberate safety
+    trade-off, not a bug.
+
+

@@ -434,6 +434,14 @@ class StoreTests(TestCase):
         self.assertContains(response, 'Screening pack')
         self.assertContains(response, 'simulated')
 
+    def test_prices_are_seeded_in_rupees(self):
+        from epilepscreen.models import StoreProduct
+        pack = StoreProduct.objects.get(title='Screening pack')
+        self.assertEqual(pack.price_paise, 49900)  # ₹499, stored in paise
+        page = self.client.get('/store/')
+        self.assertContains(page, '₹499')
+        self.assertNotContains(page, '$19')
+
     def test_add_to_cart_then_checkout_page(self):
         from epilepscreen.models import StoreProduct
         product = StoreProduct.objects.first()
@@ -453,20 +461,67 @@ class StoreTests(TestCase):
         purchase = Purchase.objects.get()
         self.assertEqual(purchase.payment_method, 'demo')
         self.assertEqual(purchase.status, 'completed')
-        self.assertEqual(purchase.amount_cents, product.price_cents)
+        self.assertEqual(purchase.amount_paise, product.price_paise)
+        self.assertEqual(purchase.currency, 'INR')
         self.assertIsNotNone(purchase.completed_at)
 
         receipt = self.client.get('/order/')
         self.assertContains(receipt, 'Order recorded')
         self.assertContains(receipt, 'no payment taken')
+        self.assertContains(receipt, '₹')
+
+    def test_checkout_stores_the_total_spend_per_email(self):
+        """Two orders from one email accumulate in customer_spend."""
+        from epilepscreen.models import CustomerSpend, StoreProduct
+        product = StoreProduct.objects.get(title='Screening pack')
+
+        for _ in range(2):
+            self.client.post(f'/cart/add/{product.pk}/')
+            self.client.post('/checkout/', {'email': 'spender@example.com'})
+
+        spend = CustomerSpend.objects.get(email='spender@example.com')
+        self.assertEqual(spend.order_count, 2)
+        self.assertEqual(spend.total_paise, product.price_paise * 2)
+        self.assertEqual(spend.currency, 'INR')
+        self.assertEqual(spend.total_display, '₹998')
+        self.assertIsNotNone(spend.first_order_at)
+        self.assertIsNotNone(spend.last_order_at)
+
+    def test_spend_is_tracked_per_email_not_globally(self):
+        from epilepscreen.models import CustomerSpend, StoreProduct
+        cheap = StoreProduct.objects.get(title='Screening pack')
+        dear = StoreProduct.objects.get(title='Premium shelf')
+
+        self.client.post(f'/cart/add/{cheap.pk}/')
+        self.client.post('/checkout/', {'email': 'a@example.com'})
+        self.client.post(f'/cart/add/{dear.pk}/')
+        self.client.post('/checkout/', {'email': 'b@example.com'})
+
+        self.assertEqual(CustomerSpend.objects.get(email='a@example.com').total_paise,
+                         cheap.price_paise)
+        self.assertEqual(CustomerSpend.objects.get(email='b@example.com').total_paise,
+                         dear.price_paise)
+
+    def test_receipt_shows_the_stored_total_for_that_email(self):
+        from epilepscreen.models import StoreProduct
+        product = StoreProduct.objects.get(title='Screening pack')
+        for _ in range(3):
+            self.client.post(f'/cart/add/{product.pk}/')
+            self.client.post('/checkout/', {'email': 'repeat@example.com'})
+
+        receipt = self.client.get('/order/')
+        self.assertEqual(receipt.context['spend_total'], '₹1,497')
+        self.assertEqual(receipt.context['spend_orders'], 3)
+        self.assertContains(receipt, 'Total spend stored for repeat@example.com')
 
     def test_checkout_rejects_a_bad_email(self):
-        from epilepscreen.models import Purchase, StoreProduct
+        from epilepscreen.models import CustomerSpend, Purchase, StoreProduct
         product = StoreProduct.objects.first()
         self.client.post(f'/cart/add/{product.pk}/')
         response = self.client.post('/checkout/', {'email': 'not-an-email'}, follow=True)
         self.assertContains(response, 'not valid')
         self.assertEqual(Purchase.objects.count(), 0)
+        self.assertEqual(CustomerSpend.objects.count(), 0)
 
     def test_checkout_with_empty_cart_redirects(self):
         response = self.client.post('/checkout/', {'email': 'a@b.com'})
@@ -487,6 +542,34 @@ class StoreTests(TestCase):
         self.client.post(f'/cart/add/{product.pk}/')
         self.client.post(f'/cart/remove/{product.pk}/')
         self.assertEqual(self.client.get('/checkout/').context['item_count'], 0)
+
+
+class MoneyTests(TestCase):
+    def test_format_paise(self):
+        from epilepscreen.money import format_paise
+        self.assertEqual(format_paise(49900), '₹499')
+        self.assertEqual(format_paise(49950), '₹499.50')
+        self.assertEqual(format_paise(0), '₹0')
+        self.assertEqual(format_paise(None), '₹0')
+
+    def test_indian_grouping(self):
+        from epilepscreen.money import format_paise
+        self.assertEqual(format_paise(199900), '₹1,999')
+        self.assertEqual(format_paise(100000 * 100), '₹1,00,000')
+        self.assertEqual(format_paise(12345678 * 100 + 90), '₹1,23,45,678.90')
+
+    def test_rupees_to_paise_round_trip(self):
+        from epilepscreen.money import format_paise, rupees_to_paise
+        self.assertEqual(rupees_to_paise('499'), 49900)
+        self.assertEqual(rupees_to_paise('₹1,999'), 199900)
+        self.assertEqual(rupees_to_paise('19.5'), 1950)
+        self.assertEqual(format_paise(rupees_to_paise('1,23,456.70')), '₹1,23,456.70')
+
+    def test_rupees_to_paise_rejects_junk(self):
+        from epilepscreen.money import rupees_to_paise
+        for junk in ('', 'abc', '1.2.3', '12.345'):
+            with self.assertRaises(ValueError):
+                rupees_to_paise(junk)
 
 
 class HealthTests(TestCase):
@@ -513,3 +596,4 @@ class AdminTests(TestCase):
             self.assertEqual(response.status_code, 200, url)
         self.assertContains(self.client.get('/admin/epilepscreen/videorecord/'),
                             'Admin clip')
+

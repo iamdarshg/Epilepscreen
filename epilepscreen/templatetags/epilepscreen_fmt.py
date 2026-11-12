@@ -43,11 +43,12 @@ def attrs(value):
 
 
 @register.filter
-def money(cents):
-    """1900 -> $19, 1999 -> $19.99. Cent amounts live in the database."""
-    try:
-        amount = int(cents) / 100
-    except (TypeError, ValueError):
-        return '$0'
-    text = f'{amount:,.2f}'.rstrip('0').rstrip('.')
-    return f'${text}'
+def rupees(paise):
+    """49900 -> ₹499, 499450 -> ₹4,994.50. Cent-style integers in, text out."""
+    from epilepscreen.money import format_paise
+
+    return format_paise(paise)
+
+
+# Kept so older templates keep working; both filters do the same thing now.
+money = rupees
