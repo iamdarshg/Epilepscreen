@@ -82,8 +82,9 @@
 
       <button class="btn btn--primary" type="submit">Confirm demo order</button>
       <p class="summary__fine">
-        The button calls Django, which writes one <code>purchases</code> row per pack with
-        <code>payment_method = 'demo'</code>. Nothing is charged.
+        The button calls Django, which writes one <code>purchases</code> row per pack
+        with <code>payment_method = 'demo'</code> and adds the total to this email's
+        row in <code>customer_spend</code>. Nothing is charged.
       </p>
     </form>
   </div>
