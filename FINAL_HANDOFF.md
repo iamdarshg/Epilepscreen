@@ -179,4 +179,5 @@ to 72 tests that exercise the real pipeline, plus 6 new detector tests in
 | `epilepscreen/migrations/0003_sql_tables.py` | the schema, per engine |
 | `templates/player.html` + `static/epilepscreen/player.js` | how timestamps reach the overlay |
 | `PROJECT_EXPLANATION.md` | the viva script |
+| `CODE_GUIDE.md` | every file, every function, every SQL statement, the database and the MySQL connection |
 

@@ -122,3 +122,6 @@ The detectors are heuristics modelled on WCAG 2.3 guidance, not a clinical
 standard. Sampling at ~15 frames/s can miss a flash that repeats at exactly the
 sampling rate. A clear report is evidence, not a guarantee. See
 `PROJECT_EXPLANATION.md` for the full list.
+
+For a file-by-file, function-by-function reference — including every SQL
+statement and how the MySQL connection works — see `CODE_GUIDE.md`.
