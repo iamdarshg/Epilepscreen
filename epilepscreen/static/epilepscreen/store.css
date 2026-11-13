@@ -893,50 +893,6 @@ body {
   color: var(--color-ink-2);
 }
 
-.archive-list {
-  margin: var(--space-lg) 0 0;
-  padding: 0;
-  list-style: none;
-  border-top: var(--rule-hair) solid var(--color-rule);
-}
-
-.archive-list li {
-  padding-block: var(--space-md);
-  border-bottom: var(--rule-hair) solid var(--color-rule);
-}
-
-.archive-list a {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-md);
-  text-decoration: none;
-  transition: color var(--dur-micro) var(--ease-out);
-}
-
-.archive-list a:hover {
-  color: var(--color-accent);
-}
-
-.archive-list__title {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  line-height: 1.1;
-  text-transform: uppercase;
-}
-
-.archive-list__meta {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  color: var(--color-muted);
-}
-
-.archive-list p {
-  margin-top: var(--space-xs);
-  font-size: var(--text-sm);
-  color: var(--color-muted);
-}
-
 .reader__body form {
   display: flex;
   flex-wrap: wrap;
