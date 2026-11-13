@@ -1,6 +1,6 @@
 """Orchestrates the detectors into timestamped hazard events.
 
-`analyze_frames` is the whole brain of the project: it takes a list of RGB
+`analyze_frames` is the whole brain of the project: it takes an iterable of RGB
 frames (NumPy arrays, shape H x W x 3), runs five measurements per frame,
 groups the flagged frames into runs, and turns each run into a `HazardEvent`
 with a start and end time in seconds.
@@ -8,13 +8,13 @@ with a start and end time in seconds.
 Nothing in here touches a video file, Django or the database, which is why it
 can be unit-tested with hand-built arrays of pixels.
 """
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from photosensitive.config import get
 from photosensitive.spatial import luminance_map, pattern_change, spatial_pattern_score
 from photosensitive.temporal import (
     mean_color_delta,
-    mean_luminance,
     red_coverage,
 )
 
@@ -110,7 +110,7 @@ def _group_runs(flags: list[bool]) -> list[tuple[int, int]]:
     return runs
 
 
-def analyze_frames(frames: list, fps: float = 30.0, cfg: dict | None = None) -> RiskProfile:
+def analyze_frames(frames: Iterable, fps: float = 30.0, cfg: dict | None = None) -> RiskProfile:
     """Analyze RGB frames (H, W, 3) uint8 into timestamped hazard events.
 
     Raises ValueError if fewer than 2 frames are provided: one frame has no
@@ -118,19 +118,35 @@ def analyze_frames(frames: list, fps: float = 30.0, cfg: dict | None = None) -> 
 
     Event times are in seconds: frame index / fps.
     """
-    if len(frames) < 2:
-        raise ValueError("analyze_frames requires at least 2 frames")
-    n = len(frames)
     fps = float(fps)
 
     # --- measurements, one pass over the frames ---------------------------
-    lum_maps = [luminance_map(f) for f in frames]
-    mean_lums = [mean_luminance(f) for f in frames]
-    reds = [red_coverage(f) for f in frames]
-    color_deltas = [mean_color_delta(frames[i - 1], frames[i]) for i in range(1, n)]
-    spatial = [spatial_pattern_score(m, contrast=get(cfg, "spatial_contrast"))
-               for m in lum_maps]
-    moves = [pattern_change(lum_maps[i - 1], lum_maps[i]) for i in range(1, n)]
+    # A long film can produce thousands of frames. Keeping every RGB frame and
+    # every float64 luminance map would need gigabytes, so retain only the
+    # previous pair and the scalar curves the report actually uses. The input
+    # may be any iterable, including the decoder's generator.
+    mean_lums: list[float] = []
+    reds: list[float] = []
+    color_deltas: list[float] = []
+    spatial: list[float] = []
+    moves: list[float] = []
+    prev_frame = None
+    prev_lum = None
+    n = 0
+    for frame in frames:
+        lum = luminance_map(frame)
+        mean_lums.append(float(lum.mean() * 255.0))
+        reds.append(red_coverage(frame))
+        spatial.append(spatial_pattern_score(
+            lum, contrast=get(cfg, "spatial_contrast")))
+        if prev_lum is not None:
+            color_deltas.append(mean_color_delta(prev_frame, frame))
+            moves.append(pattern_change(prev_lum, lum))
+        prev_frame, prev_lum = frame, lum
+        n += 1
+
+    if n < 2:
+        raise ValueError("analyze_frames requires at least 2 frames")
 
     # --- thresholds, all overridable through cfg --------------------------
     flash_delta = float(get(cfg, "flash_delta"))

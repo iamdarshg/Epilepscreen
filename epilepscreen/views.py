@@ -301,22 +301,50 @@ def _suffix_for(content_type):
     return mapping.get((content_type or '').lower(), '.mp4')
 
 
+def _write_stored_blob(blob, filename):
+    """Write an lzma blob to disk in chunks.
+
+    `lzma.decompress()` returns the whole film at once, which is enough to push
+    a small server into swap on a large upload. Streaming keeps peak memory at
+    the compressed blob plus one chunk of output.
+    """
+    view = memoryview(blob)
+    chunk_size = 4 * 1024 * 1024
+    try:
+        decompressor = lzma.LZMADecompressor()
+        with open(filename, 'wb') as handle:
+            for offset in range(0, len(view), chunk_size):
+                handle.write(decompressor.decompress(
+                    view[offset:offset + chunk_size]))
+                if decompressor.eof:
+                    break
+    except lzma.LZMAError:
+        # Compatibility with rows written before the format was fixed: if the
+        # blob is not compressed, store the bytes as they are.
+        with open(filename, 'wb') as handle:
+            for offset in range(0, len(view), chunk_size):
+                handle.write(view[offset:offset + chunk_size])
+
+
 def materialise_video(video_hash):
     """Decompress a stored blob into a temporary file. Returns (path, ctx)."""
     row = get_video_store().get_video_by_hash(video_hash)
     if not row:
         raise Http404('Video not found')
-    blob = row.get('movie')
+    blob = row.pop('movie', None)
     if blob is None:
         raise Http404('That library item has no file stored.')
-    try:
-        raw = lzma.decompress(blob)
-    except lzma.LZMAError:
-        raw = bytes(blob)
     handle = tempfile.NamedTemporaryFile(
         delete=False, suffix=_suffix_for(row.get('content_type')))
-    handle.write(raw)
     handle.close()
+    try:
+        _write_stored_blob(blob, handle.name)
+    except Exception:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
     return handle.name, row
 
 
