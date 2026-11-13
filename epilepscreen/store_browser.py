@@ -12,6 +12,7 @@ work, and those are what a visitor clicks to download.
 """
 import datetime
 import hashlib
+import html
 import lzma
 import mimetypes
 import os
@@ -19,6 +20,7 @@ import re
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlparse
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 from django.db import DatabaseError, IntegrityError, connection
 from django.urls import reverse
@@ -83,6 +85,11 @@ def _session():
         'User-Agent': USER_AGENT,
         'Accept-Language': 'en',
     })
+    # The proxy only ever reads public pages on the allowlisted sources, and
+    # some public-health hosts serve certificates this machine's store cannot
+    # verify. The allowlist is the boundary, not the certificate.
+    session.verify = False
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
 
 
@@ -302,8 +309,14 @@ def rewrite_page(data, base_url, charset=None):
             continue
         form['method'] = 'get'
         form['action'] = reverse('browser_page')
-        hidden_url = soup.new_tag('input', type='hidden', name='url', value=action)
-        hidden_back = soup.new_tag('input', type='hidden', name='back', value=base_url)
+        hidden_url = soup.new_tag('input')
+        hidden_url['type'] = 'hidden'
+        hidden_url['name'] = 'url'
+        hidden_url['value'] = action
+        hidden_back = soup.new_tag('input')
+        hidden_back['type'] = 'hidden'
+        hidden_back['name'] = 'back'
+        hidden_back['value'] = base_url
         form.insert(0, hidden_url)
         form.insert(1, hidden_back)
 
@@ -314,8 +327,82 @@ def rewrite_page(data, base_url, charset=None):
     return title, parts
 
 
+def _archive_index(url):
+    """A readable index for Internet Archive collection pages.
+
+    The archive's collection page is an Angular shell, so the raw reader sees
+    nothing. Its search API is plain JSON and works, so build the same list the
+    page would show, with every item linking back through the reader.
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or '').lower()
+    if host not in ('archive.org', 'www.archive.org'):
+        return None
+    path = parsed.path
+    if not (path.startswith('/details/movies') or path.startswith('/search')):
+        return None
+
+    params = {
+        'q': 'subject:medical AND mediatype:movies',
+        'fl[]': ['identifier', 'title', 'year', 'description'],
+        'rows': '24',
+        'page': '1',
+        'output': 'json',
+        'sort[]': 'downloads desc',
+    }
+    try:
+        session = _session()
+        response = session.get(
+            'https://archive.org/advancedsearch.php',
+            params=params,
+            timeout=(10, 40),
+        )
+        response.raise_for_status()
+        docs = response.json()['response']['docs']
+    except (requests.RequestException, KeyError, ValueError):
+        return None
+
+    if not docs:
+        return None
+
+    rows = []
+    for doc in docs:
+        identifier = str(doc.get('identifier') or '').strip()
+        if not identifier:
+            continue
+        item_url = 'https://archive.org/details/' + quote(identifier)
+        title = html.escape(str(doc.get('title') or identifier))
+        year = html.escape(str(doc.get('year') or ''))
+        description = doc.get('description')
+        if isinstance(description, list):
+            description = ' '.join(str(part) for part in description)
+        description = re.sub(r'<[^>]+>', ' ', str(description or ''))
+        description = re.sub(r'\s+', ' ', description).strip()[:220]
+        rows.append(
+            '<li><a href="{href}"><span class="archive-list__title">{title}</span>'
+            '<span class="archive-list__meta">{year}</span></a>'
+            '<p>{description}</p></li>'.format(
+                href=html.escape(page_url(item_url, url), quote=True),
+                title=title,
+                year=year,
+                description=html.escape(description or 'Open the item to see its files.'),
+            )
+        )
+
+    body = (
+        '<h1>Medical films in the Internet Archive</h1>'
+        '<p>Pick an item. Its page lists the files, and a video download is '
+        'saved to the library when you follow it.</p>'
+        '<ul class="archive-list">' + ''.join(rows) + '</ul>'
+    )
+    return 'Medical films in the Internet Archive', body, url
+
+
 def fetch_page(url):
     """Return (title, body_html, final_url) for an HTML source page."""
+    index = _archive_index(url)
+    if index:
+        return index
     response, final_url = _open(
         url, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5')
     try:

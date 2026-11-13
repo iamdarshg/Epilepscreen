@@ -95,7 +95,7 @@ WSGI_APPLICATION = 'mysite.wsgi.application'
 #
 # The raw SQL in epilepscreen/views.py is written with `%s` placeholders, which
 # Django translates for SQLite, so the same queries run on both engines.
-DB_ENGINE = os.environ.get('DB_ENGINE', 'sqlite').strip().lower()
+DB_ENGINE = os.environ.get('DB_ENGINE', 'mysql').strip().lower()
 
 if DB_ENGINE == 'mysql':
     DATABASES = {
