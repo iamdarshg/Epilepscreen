@@ -10,10 +10,12 @@ can be unit-tested with hand-built arrays of pixels.
 """
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from math import isfinite
 
-from photosensitive.config import get
+from photosensitive.config import thresholds_for_fps
 from photosensitive.spatial import luminance_map, pattern_change, spatial_pattern_score
 from photosensitive.temporal import (
+    flicker_runs,
     mean_color_delta,
     red_coverage,
 )
@@ -119,6 +121,10 @@ def analyze_frames(frames: Iterable, fps: float = 30.0, cfg: dict | None = None)
     Event times are in seconds: frame index / fps.
     """
     fps = float(fps)
+    if not isfinite(fps) or fps <= 0:
+        raise ValueError("fps must be finite and positive")
+    thresholds = thresholds_for_fps(cfg, fps)
+    spatial_contrast = float(thresholds["spatial_contrast"])
 
     # --- measurements, one pass over the frames ---------------------------
     # A long film can produce thousands of frames. Keeping every RGB frame and
@@ -138,7 +144,7 @@ def analyze_frames(frames: Iterable, fps: float = 30.0, cfg: dict | None = None)
         mean_lums.append(float(lum.mean() * 255.0))
         reds.append(red_coverage(frame))
         spatial.append(spatial_pattern_score(
-            lum, contrast=get(cfg, "spatial_contrast")))
+            lum, contrast=spatial_contrast))
         if prev_lum is not None:
             color_deltas.append(mean_color_delta(prev_frame, frame))
             moves.append(pattern_change(prev_lum, lum))
@@ -149,18 +155,28 @@ def analyze_frames(frames: Iterable, fps: float = 30.0, cfg: dict | None = None)
         raise ValueError("analyze_frames requires at least 2 frames")
 
     # --- thresholds, all overridable through cfg --------------------------
-    flash_delta = float(get(cfg, "flash_delta"))
-    red_floor = float(get(cfg, "red_floor"))
-    color_thr = float(get(cfg, "color_threshold"))
-    spatial_floor = float(get(cfg, "spatial_threshold"))
-    move_floor = float(get(cfg, "pattern_move_threshold"))
+    flash_delta = float(thresholds["flash_delta"])
+    flash_window = int(thresholds["flash_window"])
+    flash_limit = int(thresholds["flash_limit"])
+    red_window = int(thresholds["red_window"])
+    red_floor = float(thresholds["red_floor"])
+    color_thr = float(thresholds["color_threshold"])
+    spatial_floor = float(thresholds["spatial_threshold"])
+    move_floor = float(thresholds["pattern_move_threshold"])
 
     # --- per-frame flags --------------------------------------------------
-    # A flash is a jump in average brightness between neighbouring frames.
-    # Frame 0 can never be flagged: there is nothing before it to compare to.
-    deltas = [0.0] + [abs(mean_lums[i] - mean_lums[i - 1]) for i in range(1, n)]
-    flash_flag = [i > 0 and deltas[i] >= flash_delta for i in range(n)]
-    red_flag = [c >= red_floor for c in reds]
+    deltas = [0.0] + [current - previous
+                      for previous, current in zip(mean_lums, mean_lums[1:])]
+    flash_runs = flicker_runs(deltas, flash_delta, flash_window, flash_limit)
+    flash_flag = [False] * n
+    for a, b in flash_runs:
+        flash_flag[a:b + 1] = [True] * (b - a + 1)
+
+    red_flag = [False] * n
+    for a, b in _group_runs([c >= red_floor for c in reds]):
+        if a > 0 and b < n - 1 and b - a + 1 < 2 * red_window:
+            red_flag[a:b + 1] = [True] * (b - a + 1)
+
     color_flag = [False] + [d >= color_thr for d in color_deltas]
     spatial_flag = [s >= spatial_floor for s in spatial]
     move_flag = [False] + [m >= move_floor for m in moves]
@@ -172,20 +188,18 @@ def analyze_frames(frames: Iterable, fps: float = 30.0, cfg: dict | None = None)
             events.append(HazardEvent(kind, a / fps, b / fps, attrs_fn(a, b)))
 
     def _flash_attrs(a, b):
-        """Brightness change per frame inside the run, plus a flash rate.
-
-        `flash_rate` counts brightness transitions per second (a full
-        on/off/on flicker is two transitions); `flashes_per_second` is the
-        WCAG-style figure you would compare against a 3-per-second limit.
-        """
-        peak = max(deltas[a:b + 1])
-        span = max(1e-6, (b - a + 1) / fps)
-        transitions = sum(1 for i in range(a, b + 1) if flash_flag[i])
-        rate = transitions / span
+        """Count peak transitions within one second of the event."""
+        indices = [i for i in range(a, b + 1) if abs(deltas[i]) >= flash_delta]
+        left = 0
+        peak_count = 0
+        for right, index in enumerate(indices):
+            while index - indices[left] >= fps:
+                left += 1
+            peak_count = max(peak_count, right - left + 1)
         return {
-            'brightness_diff': round(peak, 1),
-            'flash_rate': round(rate, 1),
-            'flashes_per_second': round(rate / 2, 1),
+            'brightness_diff': round(max(abs(deltas[i]) for i in indices), 1),
+            'flash_rate': peak_count,
+            'flashes_per_second': peak_count // 2,
         }
 
     def _red_attrs(a, b):
@@ -217,9 +231,8 @@ def analyze_frames(frames: Iterable, fps: float = 30.0, cfg: dict | None = None)
             'duration_s': round((b - a + 1) / fps, 2),
         }
 
-    spatial_contrast = float(get(cfg, "spatial_contrast"))
-
-    _add("flicker", flash_flag, _flash_attrs)
+    for a, b in flash_runs:
+        events.append(HazardEvent("flicker", a / fps, b / fps, _flash_attrs(a, b)))
     _add("red_flash", red_flag, _red_attrs)
     _add("color_transition", color_flag, _color_attrs)
     _add("spatial_pattern", spatial_flag, _spatial_attrs)

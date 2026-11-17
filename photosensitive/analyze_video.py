@@ -3,11 +3,8 @@
 OpenCV is imported inside the functions on purpose: the rest of the package is
 pure NumPy and can be unit-tested without an OpenCV build.
 
-Sampling, not playback: we do not look at every frame. A 30 fps clip is read
-every third frame to give a steady ~10 frames per second for analysis, which
-keeps a two-minute film to about 1200 frames. The timestamps the analyser
-reports therefore use the *effective* sampling rate (source fps / step), not
-the rate we asked for.
+Screening reads every decoded frame by default. An explicit positive sample
+rate strides through the source and timestamps use the effective rate.
 """
 import json
 import os
@@ -19,15 +16,13 @@ import numpy as np
 
 from photosensitive.analyzer import RiskProfile, analyze_frames
 
-DEFAULT_TARGET_FPS = 15.0
+DEFAULT_TARGET_FPS = 0.0
+FALLBACK_SOURCE_FPS = 15.0
 
 # Frames are shrunk before analysis. Detectors work on average brightness and
 # stripe structure, both of which survive downscaling, and a 480 px long edge
 # is roughly 20x less work than 1080p.
 MAX_DIMENSION = 480
-
-# Hard cap so a broken file cannot loop forever inside a web request.
-MAX_FRAMES = 20000
 
 # ffmpeg gets a generous ceiling because a feature-length film takes a while to
 # transcode. The analysis request is synchronous, but it should finish rather
@@ -94,7 +89,7 @@ def _low_res_proxy(path: str):
         ffmpeg, '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
         '-i', str(path), '-map', '0:v:0', '-an', '-vf', scale,
         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28',
-        '-pix_fmt', 'yuv420p', '-threads', '2', '-movflags', '+faststart',
+        '-pix_fmt', 'yuv420p', '-fps_mode', 'passthrough', '-threads', '2', '-movflags', '+faststart',
         proxy_path,
     ]
     try:
@@ -114,7 +109,7 @@ def _low_res_proxy(path: str):
     return proxy_path
 
 
-def _source_fps(cap, fallback: float = DEFAULT_TARGET_FPS) -> float:
+def _source_fps(cap, fallback: float = FALLBACK_SOURCE_FPS) -> float:
     """Frame rate reported by the container, with sane guards."""
     import cv2
 
@@ -128,7 +123,7 @@ def _source_fps(cap, fallback: float = DEFAULT_TARGET_FPS) -> float:
     return fps
 
 
-def source_frame_rate(path: str, fallback: float = DEFAULT_TARGET_FPS) -> float:
+def source_frame_rate(path: str, fallback: float = FALLBACK_SOURCE_FPS) -> float:
     """Read the container frame rate without decoding frames."""
     import cv2
 
@@ -143,7 +138,7 @@ def source_frame_rate(path: str, fallback: float = DEFAULT_TARGET_FPS) -> float:
 
 def _read_frames(path: str, target_fps: float = DEFAULT_TARGET_FPS,
                  max_dimension: int | None = MAX_DIMENSION):
-    """Yield RGB uint8 frames, subsampled to about `target_fps`.
+    """Yield RGB uint8 frames at source rate or subsample to `target_fps`.
 
     This is a generator so a long film does not keep every frame alive at
     once. The analyser consumes one frame at a time and retains only scalars.
@@ -151,14 +146,13 @@ def _read_frames(path: str, target_fps: float = DEFAULT_TARGET_FPS,
     import cv2
 
     cap = cv2.VideoCapture(str(path))
-    if not cap.isOpened():
-        raise ValueError("OpenCV could not open that file")
     try:
-        src_fps = _source_fps(cap, fallback=target_fps)
-        step = max(1, int(round(src_fps / float(target_fps))))
+        if not cap.isOpened():
+            raise ValueError("OpenCV could not open that file")
+        src_fps = _source_fps(cap, fallback=target_fps if target_fps > 0 else FALLBACK_SOURCE_FPS)
+        step = _sample_step(src_fps, target_fps)
         index = 0
-        yielded = 0
-        while yielded < MAX_FRAMES:
+        while True:
             ok, bgr = cap.read()
             if not ok:
                 break
@@ -171,17 +165,20 @@ def _read_frames(path: str, target_fps: float = DEFAULT_TARGET_FPS,
                         (max(1, int(rgb.shape[1] * scale)),
                          max(1, int(rgb.shape[0] * scale))),
                         interpolation=cv2.INTER_AREA)
-                yielded += 1
                 yield rgb
             index += 1
     finally:
         cap.release()
 
 
+def _sample_step(source_fps: float, target_fps: float) -> int:
+    return max(1, round(source_fps / target_fps)) if target_fps > 0 else 1
+
+
 def effective_fps(path: str, target_fps: float = DEFAULT_TARGET_FPS) -> float:
     """The rate the sampled frames actually represent, in frames per second."""
-    src = source_frame_rate(path, fallback=target_fps)
-    step = max(1, int(round(src / float(target_fps))))
+    src = source_frame_rate(path, fallback=target_fps if target_fps > 0 else FALLBACK_SOURCE_FPS)
+    step = _sample_step(src, target_fps)
     return src / step
 
 

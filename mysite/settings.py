@@ -90,7 +90,7 @@ WSGI_APPLICATION = 'mysite.wsgi.application'
 
 # One codebase, two database engines.
 #
-#   DB_ENGINE=sqlite  -> db.sqlite3 next to manage.py (default; no server needed)
+#   DB_ENGINE=sqlite  -> db.sqlite3 next to manage.py (no server needed)
 #   DB_ENGINE=mysql   -> the MySQL target named by the DB_* variables
 #
 # The raw SQL in epilepscreen/views.py is written with `%s` placeholders, which
@@ -171,9 +171,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # disk. This caps a single upload and is also enforced again in the view.
 MAX_UPLOAD_BYTES = int(os.environ.get('MAX_UPLOAD_BYTES', 100 * 1024 * 1024))
 
-# Frame rate the analyser samples at. Lower is faster; 10 fps is enough to
-# catch flashes that last a few frames.
-ANALYSIS_FPS = float(os.environ.get('ANALYSIS_FPS', '15'))
+# Zero screens every decoded frame. A positive target enables subsampling.
+ANALYSIS_FPS = float(os.environ.get('ANALYSIS_FPS', '0'))
 
 # The storefront sells packs in a demonstration catalogue. No payment gateway
 # is wired in: orders are records in the local database, nothing more.

@@ -1,4 +1,6 @@
 """Temporal (frame-to-frame) photosensitive detectors. Pure-NumPy core."""
+from collections import deque
+
 import numpy as np
 
 
@@ -19,24 +21,37 @@ def mean_luminance(rgb: np.ndarray) -> float:
     return float(relative_luminance(rgb).mean() * 255.0)
 
 
+def flicker_runs(deltas: list[float], threshold: float, window: int,
+                 limit: int) -> list[tuple[int, int]]:
+    """Merge overlapping windows that contain enough alternating changes."""
+    recent = deque()
+    runs: list[tuple[int, int]] = []
+    for index, delta in enumerate(deltas):
+        if abs(delta) < threshold or delta == 0:
+            continue
+        if recent and (delta > 0) == (deltas[recent[-1]] > 0):
+            recent.clear()
+        recent.append(index)
+        while recent and index - recent[0] >= window:
+            recent.popleft()
+        if len(recent) >= limit:
+            start = recent[0]
+            if runs and start <= runs[-1][1]:
+                runs[-1] = (runs[-1][0], index)
+            else:
+                runs.append((start, index))
+    return runs
+
+
 def classify_flicker(luminances: list[float], flash_delta=None, window=None, limit=None) -> bool:
-    """True if any sliding window of `window` frames contains `limit` or more
-    frames whose absolute luminance delta from the previous frame is at least
-    `flash_delta`. Approximates the WCAG '3+ flashes in a second' general-flash rule."""
+    """Check whether a frame window contains enough alternating brightness changes."""
     from photosensitive.config import get
 
     delta_t = float(get(None, "flash_delta")) if flash_delta is None else float(flash_delta)
     win = int(get(None, "flash_window")) if window is None else int(window)
     lim = int(get(None, "flash_limit")) if limit is None else int(limit)
-
-    deltas = [
-        abs(luminances[i] - luminances[i - 1])
-        for i in range(1, len(luminances))
-    ]
-    for i in range(len(deltas) - win + 1):
-        if sum(1 for d in deltas[i:i + win] if d >= delta_t) >= lim:
-            return True
-    return False
+    deltas = [current - previous for previous, current in zip(luminances, luminances[1:])]
+    return bool(flicker_runs(deltas, delta_t, win, lim))
 
 
 def red_coverage(rgb: np.ndarray) -> float:

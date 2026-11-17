@@ -54,9 +54,10 @@ from epilepscreen.store_browser import (
     is_allowed_url,
 )
 from photosensitive.analyze_video import analyze_video_file
+from photosensitive.config import thresholds_for_fps
 
 MAX_UPLOAD_BYTES = getattr(settings, 'MAX_UPLOAD_BYTES', 100 * 1024 * 1024)
-ANALYSIS_FPS = float(getattr(settings, 'ANALYSIS_FPS', 15.0))
+ANALYSIS_FPS = float(getattr(settings, 'ANALYSIS_FPS', 0.0))
 
 
 def max_upload_bytes():
@@ -77,10 +78,10 @@ VIDEO_EXTENSIONS = ('mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v', '3gp', 'og
 # Sensitivity knobs exposed in the UI: key -> (cast, minimum, maximum).
 SENSITIVITY_SPEC = {
     'flash_delta': (float, 5.0, 150.0),
-    'flash_window': (int, 1, 60),
+    'flash_window': (int, 1, 480),
     'flash_limit': (int, 1, 20),
     'red_floor': (float, 0.0, 1.0),
-    'red_window': (int, 1, 120),
+    'red_window': (int, 1, 240),
     'color_threshold': (float, 0.0, 1.8),
     'spatial_contrast': (float, 0.01, 1.0),
     'spatial_threshold': (float, 0.0, 1.0),
@@ -634,7 +635,6 @@ def _player_context(video_hash):
         'events_json': mark_safe(json.dumps(report['events'])),
         'kind_labels': KIND_LABELS,
         'sensitivity_spec': SENSITIVITY_SPEC,
-        'analysis_fps': analysis_fps(),
     }
 
 
@@ -654,7 +654,6 @@ def screening(request, video_hash):
         'title': video.get('title') or 'Untitled',
         'report': report,
         'kind_labels': KIND_LABELS,
-        'analysis_fps': analysis_fps(),
     })
 
 
@@ -741,6 +740,8 @@ def analyze(request, video_hash):
         return JsonResponse({'analyzed': False, 'error': str(exc)}, status=500)
 
     report['analyzed'] = True
+    if report.get('fps'):
+        effective = thresholds_for_fps(cfg, report['fps'])
     report['sensitivity'] = effective
     report['overrides'] = cfg
     return JsonResponse(report)

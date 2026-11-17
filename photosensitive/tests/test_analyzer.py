@@ -60,3 +60,25 @@ def test_fps_scales_event_timestamps():
 def test_too_few_frames_raises():
     with pytest.raises(ValueError):
         analyze_frames([np.zeros((4, 4, 3), dtype=np.uint8)])
+
+
+def test_single_cut_is_not_flicker():
+    profile = analyze_frames(_frames([0] * 5 + [255] * 5))
+    assert "flicker" not in profile.risk_flags
+
+
+def test_flicker_window_groups_transitions_separated_by_steady_frames():
+    frames = _frames([0] * 4 + [255] * 4 + [0] * 4 + [255] * 4)
+    profile = analyze_frames(frames, fps=30.0)
+    event, = [event for event in profile.events if event.kind == "flicker"]
+    assert event.start_time == pytest.approx(4 / 30)
+    assert event.end_time == pytest.approx(12 / 30)
+    assert event.attributes["flash_rate"] == 3
+    assert "flicker" not in analyze_frames(frames, cfg={"flash_limit": 4}).risk_flags
+    assert "flicker" not in analyze_frames(frames, cfg={"flash_window": 4}).risk_flags
+
+
+def test_steady_red_is_not_a_red_flash():
+    red = np.zeros((8, 8, 3), dtype=np.uint8)
+    red[..., 0] = 255
+    assert "red_flash" not in analyze_frames([red] * 5).risk_flags

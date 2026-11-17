@@ -1,4 +1,4 @@
-"""python manage.py analyze_media <path> [--hash <n>] [--fps 15] -> JSON report.
+"""python manage.py analyze_media <path> [--hash <n>] [--fps 0] -> JSON report.
 
 Prints the risk profile as JSON. With --hash, the detected hazard events and the
 verdict are also written to the database for that library item.
@@ -18,7 +18,7 @@ class Command(BaseCommand):
         parser.add_argument("--hash", type=int, required=False,
                             help="video_hash to persist events for")
         parser.add_argument("--fps", type=float, default=DEFAULT_TARGET_FPS,
-                            help=f"frames per second to sample (default {DEFAULT_TARGET_FPS:g})")
+                            help="target sample rate (default 0, screen every decoded frame)")
 
     def handle(self, *args, **options):
         profile = analyze_video_file(options["path"], target_fps=options["fps"])

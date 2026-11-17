@@ -16,7 +16,7 @@ browser only draws the overlay and drives the player.
 | Step | Where | What happens |
 | --- | --- | --- |
 | Upload | `epilepscreen/views.py` | Extension, size and empty-file checks; `hashlib.sha256` content hash; `lzma` compression; row in the `epilepsy` table |
-| Screen | `photosensitive/` | `cv2.VideoCapture` decodes ~15 frames/s, NumPy computes luminance, red coverage, colour deltas and stripe structure, thresholds turn them into events |
+| Screen | `photosensitive/` | `cv2.VideoCapture` reads every decoded frame by default, NumPy computes luminance, red coverage, colour deltas and stripe structure, thresholds turn them into events |
 | Store | `epilepscreen/analysis_store.py` | One row per event in `hazard_event`, one verdict in `analysis` |
 | Play | `templates/player.html` + `player.js` | The player fetches the event times and dims the video while playback is inside a hazard window |
 | Sell | `templates/checkout.html` | A **simulated** checkout priced in rupees that records a demo order and adds it to that email's running total in `customer_spend`. No card details, no gateway, no money |
@@ -39,14 +39,14 @@ pip install -r requirements.txt
 
 Two engines, one codebase. `DB_ENGINE` in `.env` picks one.
 
-**SQLite (default, nothing to install):**
+**SQLite (preselected in `.env.example`):**
 
 ```powershell
 copy .env.example .env      # then set DJANGO_SECRET_KEY
 python manage.py migrate
 ```
 
-**MySQL (optional):**
+**MySQL:**
 
 ```powershell
 pip install mysqlclient
@@ -95,8 +95,8 @@ python manage.py runserver
 ```powershell
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test                 # 80 Django tests
-python -m pytest photosensitive/tests -q   # 35 detector tests
+python manage.py test
+python -m pytest photosensitive/tests -q
 node epilepscreen/static/epilepscreen/epilepscreen.test.js   # overlay widget
 ```
 
@@ -123,14 +123,12 @@ scripts/           qa_screens.py (Playwright sweep)
 ## Limits
 
 The detectors are heuristics modelled on WCAG 2.3 guidance, not a clinical
-standard. Sampling at ~15 frames/s can miss a flash that repeats at exactly the
-sampling rate. A clear report is evidence, not a guarantee. See
+standard. Optional subsampling can miss brief or repeating flashes. A clear report is evidence, not a guarantee. See
 `PROJECT_EXPLANATION.md` for the full list.
 
 The store is fictional: prices are sample rupee values, every order row carries
 `payment_method = 'demo'`, and `customer_spend` is a demonstration aggregate kept
 in step by `epilepscreen/orders.py` — not a ledger, not a payment record.
 
-For a file-by-file, function-by-function reference — including every SQL
-statement, the `customer_spend` table and how the MySQL connection works — see
-`CODE_GUIDE.md`.
+See the [user guide](USER_GUIDE.md) for setup and playback, or the
+[code brief](CODE_BRIEF.md) for a map of the main functions and modules.

@@ -63,6 +63,14 @@ class SamplingTests(unittest.TestCase):
         self.assertGreater(profile.event_count if hasattr(profile, 'event_count')
                            else len(profile.events), 0)
 
+    def test_default_screening_keeps_alternating_source_frames(self):
+        if not write_clip(self.path, [255 if i % 2 else 0 for i in range(20)], 30):
+            self.skipTest('mp4v encoder unavailable')
+        profile = analyze_video_file(self.path)
+        self.assertIn('flicker', profile.risk_flags)
+        self.assertEqual(profile.frame_count, 20)
+        self.assertAlmostEqual(profile.fps, 30.0)
+
     def test_event_times_stay_inside_the_analysed_span(self):
         if not write_clip(self.path, [255 if i % 2 else 0 for i in range(20)], 15):
             self.skipTest('mp4v encoder unavailable')
