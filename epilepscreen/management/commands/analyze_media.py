@@ -5,7 +5,10 @@ verdict are also written to the database for that library item.
 """
 import json
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+
+from epilepscreen.analysis_store import save_screening
+from epilepscreen.models import VideoRecord
 
 from photosensitive.analyze_video import DEFAULT_TARGET_FPS, analyze_video_file
 
@@ -24,9 +27,10 @@ class Command(BaseCommand):
         profile = analyze_video_file(options["path"], target_fps=options["fps"])
         stored = 0
         if options.get("hash") is not None:
-            from epilepscreen.analysis_store import save_analysis, save_events
-            stored = save_events(options["hash"], profile.events)
-            save_analysis(options["hash"], profile)
+            try:
+                stored = save_screening(options["hash"], profile)
+            except VideoRecord.DoesNotExist as exc:
+                raise CommandError("No library video exists with that hash.") from exc
         payload = {
             "is_safe": profile.is_safe,
             "risk_flags": profile.risk_flags,

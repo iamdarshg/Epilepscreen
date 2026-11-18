@@ -261,6 +261,7 @@ class VideoRecord(models.Model):
     category = models.CharField(max_length=40, null=True, blank=True)
     content_type = models.CharField(max_length=60, null=True, blank=True)
     movie = models.BinaryField(blank=True, null=True)
+    upload_owner = models.CharField(max_length=64, null=True, editable=False)
 
     class Meta:
         managed = False

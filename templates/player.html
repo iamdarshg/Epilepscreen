@@ -164,6 +164,9 @@
         </form>
         <p class="controls__hint" data-screen-status aria-live="polite"></p>
         <a class="btn" href="{{ screening_url }}" style="margin-top:var(--space-sm);">Read the full report</a>
+        {% if can_delete_video %}
+        <a class="btn" href="{% url 'delete_video' video.hash %}" style="margin-top:var(--space-sm);">Delete video</a>
+        {% endif %}
       </div>
     </aside>
   </div>

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Delete video | Epilepscreen{% endblock %}
+
+{% block content %}
+<div class="container page--tight">
+  <h1>Delete video</h1>
+  <p class="lead">Permanently remove “{{ video.title }}” and its screening report from the library?</p>
+  <form method="post" action="{% url 'delete_video' video.hash %}">
+    {% csrf_token %}
+    <button class="btn btn--primary" type="submit">Delete video</button>
+    <a class="btn" href="{% url 'player' video.hash %}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

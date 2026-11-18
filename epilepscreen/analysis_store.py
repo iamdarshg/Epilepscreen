@@ -9,6 +9,7 @@ import json
 
 from django.db import DatabaseError, connection, transaction
 
+from epilepscreen.models import VideoRecord
 from photosensitive.analyzer import HazardEvent, RiskProfile
 
 
@@ -57,3 +58,26 @@ def clear_analysis(video_hash: int) -> None:
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM hazard_event WHERE video_hash = %s", (video_hash,))
             cursor.execute("DELETE FROM analysis WHERE video_hash = %s", (video_hash,))
+
+
+def save_screening(video_hash: int, profile: RiskProfile) -> int:
+    """Save a report only while its library row still exists."""
+    with transaction.atomic():
+        VideoRecord.objects.select_for_update().only('pk').get(pk=video_hash)
+        stored = save_events(video_hash, profile.events)
+        save_analysis(video_hash, profile)
+        return stored
+
+
+def delete_video(video_hash: int, *, owner: str | None = None) -> bool:
+    """Delete a library row and its screening data in one transaction."""
+    with transaction.atomic():
+        videos = VideoRecord.objects.filter(pk=video_hash)
+        if owner is not None:
+            videos = videos.filter(upload_owner=owner)
+        video = videos.select_for_update().only('pk').first()
+        if video is None:
+            return False
+        clear_analysis(video_hash)
+        video.delete()
+        return True

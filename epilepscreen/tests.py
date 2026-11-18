@@ -10,11 +10,16 @@ import os
 import tempfile
 
 import numpy as np
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.contrib.staticfiles import finders
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
-from django.test import TestCase
+from django.test import Client, TestCase
+from django.urls import reverse
 
-from epilepscreen.analysis_store import save_analysis, save_events
+from epilepscreen.analysis_store import save_analysis, save_events, save_screening
+from epilepscreen.models import Analysis, StoreProduct, VideoRecord
 from epilepscreen.views import VideoStore, sensitivity_from_request
 from photosensitive.analyzer import HazardEvent, analyze_frames
 
@@ -208,6 +213,64 @@ class UploadTests(TestCase):
             cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s',
                            (video_hash,))
             self.assertGreater(cursor.fetchone()[0], 0)
+
+
+class DeleteVideoTests(TestCase):
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        self.client.get(reverse('upload'))
+        self.csrf = self.client.cookies['csrftoken'].value
+        self.raw = clip_bytes('strobe')
+        if self.raw is None:
+            self.skipTest('OpenCV cannot encode mp4v here')
+        self.client.post(reverse('upload_send'), {
+            'video_file': upload_file(self.raw),
+            'screen': '1',
+            'csrfmiddlewaretoken': self.csrf,
+        })
+        self.video_hash = VideoStore().get_videos()[0]['hash']
+        self.url = reverse('delete_video', args=[self.video_hash])
+
+    def test_owner_confirms_and_deletes_video_and_report(self):
+        player = reverse('player', args=[self.video_hash])
+        self.assertContains(self.client.get(player), 'Delete video')
+        self.assertContains(self.client.get(self.url), 'Permanently remove')
+        self.assertTrue(Analysis.objects.filter(pk=self.video_hash).exists())
+        self.assertEqual(self.client.post(self.url).status_code, 403)
+        response = self.client.post(self.url, {'csrfmiddlewaretoken': self.csrf}, follow=True)
+        self.assertRedirects(response, reverse('browse'))
+        self.assertContains(response, 'Deleted &quot;clip&quot;.')
+        self.assertEqual(self.client.get(player).status_code, 404)
+        self.assertEqual(self.client.get(reverse('stream_video', args=[self.video_hash])).status_code, 404)
+        self.assertFalse(Analysis.objects.filter(pk=self.video_hash).exists())
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s', [self.video_hash])
+            self.assertEqual(cursor.fetchone()[0], 0)
+
+        profile = analyze_frames([_solid((8, 8), (50, 50, 50))] * 2)
+        with self.assertRaises(VideoRecord.DoesNotExist):
+            save_screening(self.video_hash, profile)
+        self.assertFalse(Analysis.objects.filter(pk=self.video_hash).exists())
+
+    def test_other_session_cannot_claim_ownership_by_reuploading(self):
+        other = Client()
+        player = reverse('player', args=[self.video_hash])
+        self.assertNotContains(other.get(player), 'Delete video')
+        other.post(reverse('upload_send'), {'video_file': upload_file(self.raw)})
+        self.assertEqual(other.post(self.url).status_code, 403)
+        self.assertTrue(VideoRecord.objects.filter(pk=self.video_hash).exists())
+
+    def test_staff_with_permission_can_delete_legacy_video(self):
+        legacy_hash = store_video(b'legacy video')
+        user = get_user_model().objects.create_user('staff', is_staff=True)
+        url = reverse('delete_video', args=[legacy_hash])
+        client = Client()
+        client.force_login(user)
+        self.assertEqual(client.post(url).status_code, 403)
+        user.user_permissions.add(Permission.objects.get(
+            content_type__app_label='epilepscreen', codename='delete_videorecord'))
+        self.assertRedirects(client.post(url), reverse('browse'))
+        self.assertFalse(VideoRecord.objects.filter(pk=legacy_hash).exists())
 
 
 # --------------------------------------------------------------------------
@@ -428,6 +491,23 @@ class StreamTests(TestCase):
 # --------------------------------------------------------------------------
 
 class StoreTests(TestCase):
+    def test_every_demo_pack_has_two_distinct_local_previews(self):
+        products = StoreProduct.objects.filter(active=True)
+        self.assertEqual(products.count(), 4)
+        files = set()
+        for product in products:
+            with self.subTest(product=product.title):
+                response = self.client.get(reverse('store'), {'product': product.pk})
+                self.assertContains(response, f'{product.title} previews')
+                previews = response.context['pack_previews']
+                self.assertEqual(len(previews), 2)
+                for title, filename, _source in previews:
+                    self.assertNotIn(filename, files)
+                    files.add(filename)
+                    path = f'epilepscreen/pack-previews/{filename}'
+                    self.assertIsNotNone(finders.find(path))
+                    self.assertContains(response, path)
+
     def test_store_lists_the_seeded_packs(self):
         response = self.client.get('/store/')
         self.assertEqual(response.status_code, 200)

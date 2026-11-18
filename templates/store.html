@@ -94,6 +94,25 @@
       </form>
       {% endif %}
     </div>
+    {% if pack_previews %}
+    <section class="pack-previews" aria-labelledby="pack-previews-title">
+      <h3 id="pack-previews-title">{{ selected_product.title }} previews</h3>
+      <div class="pack-previews__grid">
+        {% for title, file, source in pack_previews %}
+        <figure class="pack-previews__clip">
+          {% with path='epilepscreen/pack-previews/'|add:file %}
+          <video src="{% static path %}" controls preload="metadata" playsinline
+                 aria-label="{{ title }}"></video>
+          {% endwith %}
+          <figcaption>
+            {{ title }}
+            <a href="https://commons.wikimedia.org/wiki/File:{{ source|urlencode }}">Source and license</a>
+          </figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
   </div>
 </section>
 

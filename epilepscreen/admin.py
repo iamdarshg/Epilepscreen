@@ -1,4 +1,7 @@
 from django.contrib import admin
+from django.db import transaction
+
+from .analysis_store import delete_video
 
 from .models import (
     Analysis,
@@ -44,8 +47,13 @@ class VideoRecordAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False
 
-    def has_delete_permission(self, request, obj=None):
-        return True
+    def delete_model(self, request, obj):
+        delete_video(obj.pk)
+
+    def delete_queryset(self, request, queryset):
+        with transaction.atomic():
+            for video_hash in list(queryset.values_list('pk', flat=True)):
+                delete_video(video_hash)
 
 
 @admin.register(HazardEvent)

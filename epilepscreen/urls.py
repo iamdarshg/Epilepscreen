@@ -11,6 +11,7 @@ urlpatterns = [
     path('upload/send/', views.upload_video, name='upload_send'),
 
     # Playback and screening
+    path('videos/<int:video_hash>/delete/', views.delete_video, name='delete_video'),
     path('player/<int:video_hash>/', views.player, name='player'),
     path('embed/<int:video_hash>/', views.embed, name='embed'),
     path('screening/<int:video_hash>/', views.screening, name='screening'),

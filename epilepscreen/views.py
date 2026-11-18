@@ -17,6 +17,7 @@ import hashlib
 import json
 import lzma
 import os
+import secrets
 import tempfile
 from urllib.parse import urlparse
 
@@ -24,7 +25,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -32,9 +33,9 @@ from django.utils import timezone
 from django.utils.safestring import mark_safe
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.clickjacking import xframe_options_exempt, xframe_options_sameorigin
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from epilepscreen.analysis_store import save_analysis, save_events
+from epilepscreen.analysis_store import delete_video as delete_stored_video, save_screening
 from epilepscreen.media import (
     BUILTIN_CATEGORIES,
     content_type_for,
@@ -43,7 +44,7 @@ from epilepscreen.media import (
     probe_media,
     suggest_category,
 )
-from epilepscreen.models import Purchase, StoreProduct
+from epilepscreen.models import Purchase, StoreProduct, VideoRecord
 from epilepscreen.money import format_paise
 from epilepscreen.orders import create_demo_order, spend_for
 from epilepscreen.store_browser import (
@@ -58,6 +59,8 @@ from photosensitive.config import thresholds_for_fps
 
 MAX_UPLOAD_BYTES = getattr(settings, 'MAX_UPLOAD_BYTES', 100 * 1024 * 1024)
 ANALYSIS_FPS = float(getattr(settings, 'ANALYSIS_FPS', 0.0))
+
+UPLOAD_OWNER_SESSION_KEY = 'video_upload_owner'
 
 
 def max_upload_bytes():
@@ -155,13 +158,13 @@ class VideoStore:
                 "GROUP BY category ORDER BY category")
             return [{'name': row[0], 'count': int(row[1])} for row in cursor.fetchall()]
 
-    def insert_video(self, video_hash, title, category, content_type, blob, when=None):
+    def insert_video(self, video_hash, title, category, content_type, blob, when=None, *, owner=None):
         with self.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO epilepsy (hash, time_uploaded, title, category, "
-                "content_type, movie) VALUES (%s, %s, %s, %s, %s, %s)",
+                "content_type, movie, upload_owner) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (video_hash, when or timezone.now(), title, category,
-                 content_type, blob))
+                 content_type, blob, owner))
         return video_hash
 
     def hash_exists(self, video_hash):
@@ -175,15 +178,8 @@ class VideoStore:
             cursor.execute("UPDATE epilepsy SET category = %s WHERE hash = %s",
                            (category, int(video_hash)))
 
-    def delete_video(self, video_hash):
-        with transaction.atomic():
-            with connection.cursor() as cursor:
-                cursor.execute("DELETE FROM hazard_event WHERE video_hash = %s",
-                               (int(video_hash),))
-                cursor.execute("DELETE FROM analysis WHERE video_hash = %s",
-                               (int(video_hash),))
-                cursor.execute("DELETE FROM epilepsy WHERE hash = %s",
-                               (int(video_hash),))
+    def delete_video(self, video_hash, *, owner=None):
+        return delete_stored_video(video_hash, owner=owner)
 
 
 def get_video_store():
@@ -366,8 +362,10 @@ def run_screening(video_hash, cfg=None):
         except OSError:
             pass
 
-    stored = save_events(video_hash, profile.events)
-    save_analysis(video_hash, profile)
+    try:
+        stored = save_screening(video_hash, profile)
+    except VideoRecord.DoesNotExist as exc:
+        raise Http404('Video not found') from exc
 
     counts = {}
     for event in profile.events:
@@ -559,8 +557,12 @@ def upload_video(request):
             title=title,
             audio_only=is_audio_content(mime_type))
 
+    owner = request.session.get(UPLOAD_OWNER_SESSION_KEY)
+    if not owner:
+        owner = secrets.token_urlsafe(32)
+        request.session[UPLOAD_OWNER_SESSION_KEY] = owner
     try:
-        store.insert_video(video_hash, title, category, mime_type, lzma.compress(raw))
+        store.insert_video(video_hash, title, category, mime_type, lzma.compress(raw), owner=owner)
     except IntegrityError:
         messages.info(request, 'That file is already in the library.')
         return redirect('player', video_hash=video_hash)
@@ -618,7 +620,34 @@ def _video_or_404(video_hash):
 
 @ensure_csrf_cookie
 def player(request, video_hash):
-    return render(request, 'player.html', _player_context(video_hash))
+    context = _player_context(video_hash)
+    context['can_delete_video'] = _can_delete_video(request, video_hash)
+    return render(request, 'player.html', context)
+
+
+def _can_delete_video(request, video_hash):
+    if request.user.has_perm('epilepscreen.delete_videorecord'):
+        return True
+    owner = request.session.get(UPLOAD_OWNER_SESSION_KEY)
+    return bool(owner and VideoRecord.objects.filter(pk=video_hash, upload_owner=owner).exists())
+
+
+@require_http_methods(['GET', 'POST'])
+def delete_video(request, video_hash):
+    """Confirm and remove a library video owned by this session."""
+    video = _video_or_404(video_hash)
+    if not _can_delete_video(request, video_hash):
+        return HttpResponse('You do not have permission to delete this video.', status=403)
+    if request.method == 'GET':
+        return render(request, 'delete_video.html', {'video': video})
+
+    owner = None
+    if not request.user.has_perm('epilepscreen.delete_videorecord'):
+        owner = request.session[UPLOAD_OWNER_SESSION_KEY]
+    if not get_video_store().delete_video(video_hash, owner=owner):
+        raise Http404('Video not found')
+    messages.success(request, f'Deleted "{video["title"]}".')
+    return redirect('browse')
 
 
 def _player_context(video_hash):
@@ -732,6 +761,8 @@ def analyze(request, video_hash):
     cfg, effective = sensitivity_from_request(request)
     try:
         report = run_screening(video_hash, cfg=cfg)
+    except Http404:
+        raise
     except ValueError as exc:
         return JsonResponse({'analyzed': False, 'error': str(exc)}, status=422)
     except DatabaseError:
@@ -809,6 +840,24 @@ EXTERNAL_STORES = [
 ]
 
 PRODUCT_TYPE_LABELS = dict(StoreProduct.PRODUCT_TYPES)
+PACK_PREVIEWS = {
+    'format': (
+        ('Charpa Waterfalls', 'waterfall.mp4', 'Charpa Waterfalls video.webm'),
+        ('Flowing stream', 'stream.mp4', 'StreamOfFlowingWater.webm'),
+    ),
+    'category': (
+        ('Bees on flowers', 'flowers.mp4', 'Bees on flowers.webm'),
+        ('Flight over the clouds', 'cloud-flight.mp4', 'Flight over clouds.webm'),
+    ),
+    'premium': (
+        ('Cloudy beach', 'cloudy-beach.mp4', 'Cloudy Beach.webm'),
+        ('Mma Legage Waterfall', 'woodland-falls.mp4', 'Mma Legage Waterfall video.webm'),
+    ),
+    'research': (
+        ('Bumblebee on flowers', 'bumblebee.mp4', 'Bumblebee on flowers.webm'),
+        ('Running water', 'running-water.mp4', 'Running Stream Of Water.webm'),
+    ),
+}
 CART_SESSION_KEY = 'cart'
 ORDER_SESSION_KEY = 'last_order'
 
@@ -889,6 +938,7 @@ def _store_context(request, selected_product_id=None):
         'products': products,
         'hero_product': products[0] if products else None,
         'selected_product': selected_product,
+        'pack_previews': PACK_PREVIEWS.get(selected_product.product_type, ()) if selected_product else (),
         'selected_product_id': selected_product_id,
         'stores': EXTERNAL_STORES,
         'categories': BUILTIN_CATEGORIES,
@@ -1083,7 +1133,7 @@ def order_confirmation(request):
 
 __all__ = [
     'index', 'browse', 'categories', 'upload', 'upload_video',
-    'player', 'embed', 'screening', 'stream_video', 'stream_as_file',
+    'player', 'delete_video', 'embed', 'screening', 'stream_video', 'stream_as_file',
     'events', 'analyze', 'health',
     'store', 'product_detail', 'add_to_cart', 'remove_from_cart',
     'checkout', 'order_confirmation',

@@ -289,6 +289,36 @@ body {
   white-space: nowrap;
 }
 
+.pack-previews {
+  margin-top: var(--space-lg);
+}
+
+.pack-previews__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.pack-previews__clip {
+  margin: 0;
+}
+
+.pack-previews__clip video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.pack-previews__clip figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding-top: var(--space-xs);
+}
+
 .order {
   padding: var(--space-lg);
   border: var(--rule-hair) solid var(--color-rule);

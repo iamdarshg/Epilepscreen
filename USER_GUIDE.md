@@ -2,7 +2,7 @@
 
 ## Start the app
 
-1. Install Python 3.10 or newer. 
+1. Install Python 3.10 or newer.
 2. From the repository directory, create a virtual environment with `python -m venv .venv`. Activate it with `source .venv/bin/activate` on macOS or Linux, or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 3. Run `python -m pip install -r requirements.txt`. Copy `.env.example` to `.env` if one does not already exist. Generate a key with `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` and paste it into `DJANGO_SECRET_KEY`.
 4. Run `python manage.py migrate`, then `python manage.py runserver`. Open [Epilepscreen on localhost](http://127.0.0.1:8000/).
@@ -18,11 +18,16 @@ The example uses SQLite and creates `db.sqlite3` locally. To use MySQL, create a
 
 The screener uses approximate thresholds and may miss triggers. The guard dims the image during detected windows and can leave other parts of the video unchanged. If you are sensitive to flashes, read the report before deciding whether to play the video.
 
+## Delete an upload
+
+Open the video from **Library**, select **Delete video** in the player, then confirm. This removes the video and its screening results. The option appears in the browser session that uploaded the file. An administrator with video-delete permission can remove earlier uploads or files whose original session is unavailable.
+
 ## Use the player and demo store
 
 - **Guard while in a hazard** toggles dimming. **Dim strength** controls how dark the overlay gets. **Warning padding** extends dimming before and after each window.
 - The timeline and **Jump to next hazard** seek to flagged sections. Press Space to play or pause, N for the next hazard, and G to toggle the guard.
-- In **Store**, add a sample pack to the cart, open **Checkout**, and confirm the demo order with an email address. The receipt shows the order and the running demo total for that email. The app takes no payment.
+- Select any pack in **Store** to play its two stock previews. Use **Source and license** under a clip to open its credits.
+- To try the demo checkout, add a sample pack to the cart, open **Checkout**, and confirm the demo order with an email address. The receipt shows the order and the running demo total for that email. The app takes no payment.
 
 ## Troubleshooting
 
