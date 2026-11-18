@@ -2,7 +2,7 @@
 
 ## Start the app
 
-1. Install Python 3.10 or newer. Install FFmpeg and FFprobe on your PATH to screen large videos and generate sample clips.
+1. Install Python 3.10 or newer. 
 2. From the repository directory, create a virtual environment with `python -m venv .venv`. Activate it with `source .venv/bin/activate` on macOS or Linux, or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 3. Run `python -m pip install -r requirements.txt`. Copy `.env.example` to `.env` if one does not already exist. Generate a key with `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"` and paste it into `DJANGO_SECRET_KEY`.
 4. Run `python manage.py migrate`, then `python manage.py runserver`. Open [Epilepscreen on localhost](http://127.0.0.1:8000/).
