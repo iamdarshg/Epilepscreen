@@ -7,19 +7,11 @@ to end, not just on hand-made arrays.
 import os
 import tempfile
 import unittest
-
 import numpy as np
-
-from photosensitive.analyze_video import (
-    analyze_video_file,
-    effective_fps,
-    source_frame_rate,
-)
-
+from photosensitive.analyze_video import analyze_video_file, effective_fps, source_frame_rate
 
 def write_clip(path, frames, fps, size=(96, 72)):
     import cv2
-
     writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
     if not writer.isOpened():
         return False
@@ -32,8 +24,8 @@ def write_clip(path, frames, fps, size=(96, 72)):
         writer.release()
     return True
 
-
 class SamplingTests(unittest.TestCase):
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = os.path.join(self.tmp.name, 'clip.mp4')
@@ -49,9 +41,7 @@ class SamplingTests(unittest.TestCase):
     def test_effective_fps_divides_by_the_sampling_step(self):
         if not write_clip(self.path, [0] * 16, 30):
             self.skipTest('mp4v encoder unavailable')
-        # 30 fps sampled at 15 fps reads every second frame -> 15 fps effective.
         self.assertAlmostEqual(effective_fps(self.path, 15), 15.0, places=1)
-        # Asking for 10 fps from a 30 fps file steps by 3.
         self.assertAlmostEqual(effective_fps(self.path, 10), 10.0, places=1)
 
     def test_alternating_frames_are_not_lost_to_aliasing(self):
@@ -60,8 +50,7 @@ class SamplingTests(unittest.TestCase):
             self.skipTest('mp4v encoder unavailable')
         profile = analyze_video_file(self.path, target_fps=15)
         self.assertIn('flicker', profile.risk_flags)
-        self.assertGreater(profile.event_count if hasattr(profile, 'event_count')
-                           else len(profile.events), 0)
+        self.assertGreater(profile.event_count if hasattr(profile, 'event_count') else len(profile.events), 0)
 
     def test_default_screening_keeps_alternating_source_frames(self):
         if not write_clip(self.path, [255 if i % 2 else 0 for i in range(20)], 30):
@@ -95,7 +84,5 @@ class SamplingTests(unittest.TestCase):
             handle.write(b'not a video at all')
         with self.assertRaises(ValueError):
             analyze_video_file(path)
-
-
 if __name__ == '__main__':
     unittest.main()

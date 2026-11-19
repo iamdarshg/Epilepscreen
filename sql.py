@@ -14,7 +14,6 @@ Which database gets used is decided by DB_ENGINE in .env:
 import os
 import sys
 
-
 def main():
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'mysite.settings')
     try:
@@ -25,13 +24,10 @@ def main():
     except ImportError as exc:
         print(f'Django is not installed: {exc}\nInstall it with: pip install -r requirements.txt')
         return 1
-
     engine = settings.DATABASES['default']['ENGINE'].rsplit('.', 1)[-1]
     print(f'Creating tables for the {engine} database...')
     call_command('migrate', interactive=False)
     print('Done. Next: python manage.py runserver')
     return 0
-
-
 if __name__ == '__main__':
     sys.exit(main())

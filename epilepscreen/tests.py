@@ -8,7 +8,6 @@ import json
 import lzma
 import os
 import tempfile
-
 import numpy as np
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -17,21 +16,14 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection
 from django.test import Client, TestCase
 from django.urls import reverse
-
 from epilepscreen.analysis_store import save_analysis, save_events, save_screening
 from epilepscreen.models import Analysis, StoreProduct, VideoRecord
 from epilepscreen.views import VideoStore, sensitivity_from_request
 from photosensitive.analyzer import HazardEvent, analyze_frames
 
-
-# --------------------------------------------------------------------------
-# helpers
-# --------------------------------------------------------------------------
-
 def _write_clip(path, frames, fps=15, size=(160, 120)):
     """Encode RGB frames to an mp4 with OpenCV. Returns True on success."""
     import cv2
-
     writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*'mp4v'), fps, size)
     if not writer.isOpened():
         return False
@@ -42,24 +34,19 @@ def _write_clip(path, frames, fps=15, size=(160, 120)):
         writer.release()
     return True
 
-
 def _solid(size, rgb):
     frame = np.zeros((size[1], size[0], 3), dtype=np.uint8)
     frame[:, :] = rgb
     return frame
 
-
 def clip_bytes(kind='strobe', frames=24, fps=15, size=(160, 120)):
     """Bytes of a generated clip, or None when this OpenCV cannot encode mp4."""
     if kind == 'strobe':
-        sequence = [_solid(size, (255, 255, 255) if i % 2 else (0, 0, 0))
-                    for i in range(frames)]
+        sequence = [_solid(size, (255, 255, 255) if i % 2 else (0, 0, 0)) for i in range(frames)]
     elif kind == 'red':
-        sequence = [_solid(size, (230, 10, 10) if 8 <= i < 12 else (15, 15, 18))
-                    for i in range(frames)]
+        sequence = [_solid(size, (230, 10, 10) if 8 <= i < 12 else (15, 15, 18)) for i in range(frames)]
     else:
         sequence = [_solid(size, (60 + i, 60 + i, 60 + i)) for i in range(frames)]
-
     handle = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
     handle.close()
     try:
@@ -70,26 +57,18 @@ def clip_bytes(kind='strobe', frames=24, fps=15, size=(160, 120)):
     finally:
         os.unlink(handle.name)
 
-
 def store_video(raw, title='Clip', category='Other', content_type='video/mp4'):
     """Insert a video row the way the upload view does. Returns its hash."""
     import hashlib
-
     video_hash = int(hashlib.sha256(raw).hexdigest()[:15], 16)
-    VideoStore().insert_video(video_hash, title, category, content_type,
-                              lzma.compress(raw))
+    VideoStore().insert_video(video_hash, title, category, content_type, lzma.compress(raw))
     return video_hash
-
 
 def upload_file(raw, name='clip.mp4', content_type='video/mp4'):
     return SimpleUploadedFile(name, raw, content_type=content_type)
 
-
-# --------------------------------------------------------------------------
-# pages
-# --------------------------------------------------------------------------
-
 class HomeTests(TestCase):
+
     def test_home_renders_with_empty_library(self):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
@@ -105,14 +84,13 @@ class HomeTests(TestCase):
         self.assertContains(response, 'Calm clip')
         self.assertEqual(response.context['library_count'], 1)
 
-
 class BrowseTests(TestCase):
+
     def setUp(self):
         self.raw = clip_bytes('calm', frames=6)
         if self.raw is None:
             self.skipTest('OpenCV cannot encode mp4v here')
-        self.video_hash = store_video(self.raw, title='Gig at the hall',
-                                      category='Music Video')
+        self.video_hash = store_video(self.raw, title='Gig at the hall', category='Music Video')
 
     def test_search_filters_by_title(self):
         response = self.client.get('/browse/', {'q': 'gig'})
@@ -126,10 +104,8 @@ class BrowseTests(TestCase):
         self.assertContains(response, 'Nothing matches')
 
     def test_category_filter(self):
-        self.assertEqual(len(self.client.get('/browse/', {'category': 'Music Video'})
-                             .context['videos']), 1)
-        self.assertEqual(len(self.client.get('/browse/', {'category': 'Movie'})
-                             .context['videos']), 0)
+        self.assertEqual(len(self.client.get('/browse/', {'category': 'Music Video'}).context['videos']), 1)
+        self.assertEqual(len(self.client.get('/browse/', {'category': 'Movie'}).context['videos']), 0)
 
     def test_unscreened_video_is_marked_unknown(self):
         video = self.client.get('/browse/').context['videos'][0]
@@ -141,39 +117,27 @@ class BrowseTests(TestCase):
         self.assertEqual(payload['categories'][0]['name'], 'Music Video')
         self.assertEqual(payload['categories'][0]['count'], 1)
 
-
-# --------------------------------------------------------------------------
-# upload
-# --------------------------------------------------------------------------
-
 class UploadTests(TestCase):
+
     def test_get_renders_the_form(self):
         response = self.client.get('/upload/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Upload and screen')
 
     def test_wrong_extension_is_rejected(self):
-        response = self.client.post('/upload/send/', {
-            'title': 'notes',
-            'video_file': upload_file(b'not a video', name='notes.txt',
-                                      content_type='text/plain'),
-        }, follow=True)
+        response = self.client.post('/upload/send/', {'title': 'notes', 'video_file': upload_file(b'not a video', name='notes.txt', content_type='text/plain')}, follow=True)
         self.assertContains(response, 'wrong bytes')
         self.assertEqual(VideoStore().count_videos(), 0)
 
     def test_empty_file_is_rejected(self):
-        response = self.client.post('/upload/send/', {
-            'video_file': upload_file(b'', name='empty.mp4'),
-        }, follow=True)
+        response = self.client.post('/upload/send/', {'video_file': upload_file(b'', name='empty.mp4')}, follow=True)
         self.assertContains(response, 'empty')
         self.assertEqual(VideoStore().count_videos(), 0)
 
     def test_oversized_file_is_rejected(self):
         from django.test import override_settings
         with override_settings(MAX_UPLOAD_BYTES=10):
-            response = self.client.post('/upload/send/', {
-                'video_file': upload_file(b'x' * 64, name='big.mp4'),
-            }, follow=True)
+            response = self.client.post('/upload/send/', {'video_file': upload_file(b'x' * 64, name='big.mp4')}, follow=True)
         self.assertContains(response, 'larger than')
         self.assertEqual(VideoStore().count_videos(), 0)
 
@@ -181,11 +145,7 @@ class UploadTests(TestCase):
         raw = clip_bytes('calm', frames=6)
         if raw is None:
             self.skipTest('OpenCV cannot encode mp4v here')
-        response = self.client.post('/upload/send/', {
-            'title': 'My clip',
-            'category': 'Short',
-            'video_file': upload_file(raw),
-        })
+        response = self.client.post('/upload/send/', {'title': 'My clip', 'category': 'Short', 'video_file': upload_file(raw)})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(VideoStore().count_videos(), 1)
         row = VideoStore().get_videos()[0]
@@ -198,8 +158,7 @@ class UploadTests(TestCase):
         if raw is None:
             self.skipTest('OpenCV cannot encode mp4v here')
         self.client.post('/upload/send/', {'video_file': upload_file(raw)})
-        response = self.client.post('/upload/send/', {'video_file': upload_file(raw)},
-                                    follow=True)
+        response = self.client.post('/upload/send/', {'video_file': upload_file(raw)}, follow=True)
         self.assertContains(response, 'already in the library')
         self.assertEqual(VideoStore().count_videos(), 1)
 
@@ -210,12 +169,11 @@ class UploadTests(TestCase):
         self.client.post('/upload/send/', {'video_file': upload_file(raw), 'screen': '1'})
         video_hash = VideoStore().get_videos()[0]['hash']
         with connection.cursor() as cursor:
-            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s',
-                           (video_hash,))
+            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s', (video_hash,))
             self.assertGreater(cursor.fetchone()[0], 0)
 
-
 class DeleteVideoTests(TestCase):
+
     def setUp(self):
         self.client = Client(enforce_csrf_checks=True)
         self.client.get(reverse('upload'))
@@ -223,11 +181,7 @@ class DeleteVideoTests(TestCase):
         self.raw = clip_bytes('strobe')
         if self.raw is None:
             self.skipTest('OpenCV cannot encode mp4v here')
-        self.client.post(reverse('upload_send'), {
-            'video_file': upload_file(self.raw),
-            'screen': '1',
-            'csrfmiddlewaretoken': self.csrf,
-        })
+        self.client.post(reverse('upload_send'), {'video_file': upload_file(self.raw), 'screen': '1', 'csrfmiddlewaretoken': self.csrf})
         self.video_hash = VideoStore().get_videos()[0]['hash']
         self.url = reverse('delete_video', args=[self.video_hash])
 
@@ -246,7 +200,6 @@ class DeleteVideoTests(TestCase):
         with connection.cursor() as cursor:
             cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s', [self.video_hash])
             self.assertEqual(cursor.fetchone()[0], 0)
-
         profile = analyze_frames([_solid((8, 8), (50, 50, 50))] * 2)
         with self.assertRaises(VideoRecord.DoesNotExist):
             save_screening(self.video_hash, profile)
@@ -267,17 +220,12 @@ class DeleteVideoTests(TestCase):
         client = Client()
         client.force_login(user)
         self.assertEqual(client.post(url).status_code, 403)
-        user.user_permissions.add(Permission.objects.get(
-            content_type__app_label='epilepscreen', codename='delete_videorecord'))
+        user.user_permissions.add(Permission.objects.get(content_type__app_label='epilepscreen', codename='delete_videorecord'))
         self.assertRedirects(client.post(url), reverse('browse'))
         self.assertFalse(VideoRecord.objects.filter(pk=legacy_hash).exists())
 
-
-# --------------------------------------------------------------------------
-# screening pipeline
-# --------------------------------------------------------------------------
-
 class ScreeningTests(TestCase):
+
     def setUp(self):
         self.raw = clip_bytes('strobe', frames=24)
         if self.raw is None:
@@ -293,10 +241,8 @@ class ScreeningTests(TestCase):
         self.assertIn('flicker', payload['risk_flags'])
         self.assertGreater(payload['event_count'], 0)
         self.assertGreater(payload['frames'], 1)
-
         with connection.cursor() as cursor:
-            cursor.execute('SELECT kind, start_time, end_time FROM hazard_event '
-                           'WHERE video_hash = %s ORDER BY start_time', (self.video_hash,))
+            cursor.execute('SELECT kind, start_time, end_time FROM hazard_event WHERE video_hash = %s ORDER BY start_time', (self.video_hash,))
             rows = cursor.fetchall()
         self.assertTrue(rows)
         kinds = {row[0] for row in rows}
@@ -309,8 +255,7 @@ class ScreeningTests(TestCase):
         self.client.get(f'/analyze/{self.video_hash}/')
         self.client.get(f'/analyze/{self.video_hash}/')
         with connection.cursor() as cursor:
-            cursor.execute('SELECT COUNT(*) FROM analysis WHERE video_hash = %s',
-                           (self.video_hash,))
+            cursor.execute('SELECT COUNT(*) FROM analysis WHERE video_hash = %s', (self.video_hash,))
             self.assertEqual(cursor.fetchone()[0], 1)
 
     def test_events_endpoint_uses_the_keys_the_overlay_reads(self):
@@ -347,30 +292,26 @@ class ScreeningTests(TestCase):
         self.assertEqual(self.client.get('/analyze/999999/').status_code, 404)
 
     def test_analyze_audio_only_is_rejected(self):
-        video_hash = store_video(b'ID3fakeaudio', title='Song',
-                                 content_type='audio/mpeg')
+        video_hash = store_video(b'ID3fakeaudio', title='Song', content_type='audio/mpeg')
         response = self.client.get(f'/analyze/{video_hash}/')
         self.assertEqual(response.status_code, 422)
         self.assertIn('Audio-only', response.json()['error'])
 
     def test_sensitivity_overrides_are_echoed(self):
-        response = self.client.get(
-            f'/analyze/{self.video_hash}/?flash_delta=25&flash_limit=2&red_floor=0.15')
+        response = self.client.get(f'/analyze/{self.video_hash}/?flash_delta=25&flash_limit=2&red_floor=0.15')
         payload = response.json()
-        self.assertEqual(payload['overrides'],
-                         {'flash_delta': 25.0, 'flash_limit': 2, 'red_floor': 0.15})
+        self.assertEqual(payload['overrides'], {'flash_delta': 25.0, 'flash_limit': 2, 'red_floor': 0.15})
         self.assertEqual(payload['sensitivity']['flash_delta'], 25.0)
 
     def test_out_of_range_sensitivity_falls_back_to_defaults(self):
-        response = self.client.get(
-            f'/analyze/{self.video_hash}/?flash_delta=9999&flash_limit=nope')
+        response = self.client.get(f'/analyze/{self.video_hash}/?flash_delta=9999&flash_limit=nope')
         payload = response.json()
         self.assertEqual(payload['overrides'], {})
         self.assertEqual(payload['sensitivity']['flash_delta'], 40.0)
         self.assertEqual(payload['sensitivity']['flash_limit'], 3)
 
-
 class SensitivityParsingTests(TestCase):
+
     def test_unknown_keys_are_ignored(self):
         from django.test import RequestFactory
         request = RequestFactory().get('/analyze/1/', {'nonsense': '1'})
@@ -385,18 +326,13 @@ class SensitivityParsingTests(TestCase):
         self.assertEqual(overrides, {'flash_window': 12})
         self.assertIsInstance(overrides['flash_window'], int)
 
-
-# --------------------------------------------------------------------------
-# detector core (integration level)
-# --------------------------------------------------------------------------
-
 class DetectorTests(TestCase):
+
     def test_strobe_frames_produce_a_flicker_event_with_timestamps(self):
-        frames = [_solid((8, 8), (255, 255, 255) if i % 2 else (0, 0, 0))
-                  for i in range(8)]
+        frames = [_solid((8, 8), (255, 255, 255) if i % 2 else (0, 0, 0)) for i in range(8)]
         profile = analyze_frames(frames, fps=30.0)
         self.assertFalse(profile.is_safe)
-        event = next(e for e in profile.events if e.kind == 'flicker')
+        event = next((e for e in profile.events if e.kind == 'flicker'))
         self.assertAlmostEqual(event.start_time, 1 / 30.0, places=6)
         self.assertAlmostEqual(event.end_time, 7 / 30.0, places=6)
         self.assertIn('flash_rate', event.attributes)
@@ -408,8 +344,7 @@ class DetectorTests(TestCase):
         self.assertEqual(profile.events, [])
 
     def test_summary_reports_counts_and_duration(self):
-        frames = [_solid((8, 8), (255, 255, 255) if i % 2 else (0, 0, 0))
-                  for i in range(8)]
+        frames = [_solid((8, 8), (255, 255, 255) if i % 2 else (0, 0, 0)) for i in range(8)]
         summary = analyze_frames(frames, fps=10.0).summary()
         self.assertEqual(summary['frames'], 8)
         self.assertAlmostEqual(summary['duration_s'], 0.8, places=2)
@@ -420,21 +355,15 @@ class DetectorTests(TestCase):
         with self.assertRaises(ValueError):
             analyze_frames([_solid((8, 8), (0, 0, 0))])
 
-
-# --------------------------------------------------------------------------
-# storage
-# --------------------------------------------------------------------------
-
 class AnalysisStoreTests(TestCase):
+
     def test_save_events_replaces_previous_rows(self):
         video_hash = store_video(b'fake-bytes', title='x')
-        first = [HazardEvent('flicker', 0.0, 1.0, {'flash_rate': 5}),
-                 HazardEvent('red_flash', 2.0, 3.0, {'coverage': 0.4})]
+        first = [HazardEvent('flicker', 0.0, 1.0, {'flash_rate': 5}), HazardEvent('red_flash', 2.0, 3.0, {'coverage': 0.4})]
         self.assertEqual(save_events(video_hash, first), 2)
         self.assertEqual(save_events(video_hash, first[:1]), 1)
         with connection.cursor() as cursor:
-            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s',
-                           (video_hash,))
+            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s', (video_hash,))
             self.assertEqual(cursor.fetchone()[0], 1)
 
     def test_events_cannot_name_a_missing_video(self):
@@ -447,16 +376,13 @@ class AnalysisStoreTests(TestCase):
         class Profile:
             is_safe = True
             risk_flags = []
-
         save_events(video_hash, [HazardEvent('flicker', 0.0, 1.0, {})])
         save_analysis(video_hash, Profile())
         with connection.cursor() as cursor:
             cursor.execute('DELETE FROM epilepsy WHERE hash = %s', (video_hash,))
-            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s',
-                           (video_hash,))
+            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s', (video_hash,))
             self.assertEqual(cursor.fetchone()[0], 0)
-            cursor.execute('SELECT COUNT(*) FROM analysis WHERE video_hash = %s',
-                           (video_hash,))
+            cursor.execute('SELECT COUNT(*) FROM analysis WHERE video_hash = %s', (video_hash,))
             self.assertEqual(cursor.fetchone()[0], 0)
 
     def test_save_analysis_keeps_one_row(self):
@@ -465,21 +391,19 @@ class AnalysisStoreTests(TestCase):
         class Profile:
             is_safe = False
             risk_flags = ['flicker']
-
         save_analysis(video_hash, Profile())
         Profile.is_safe = True
         Profile.risk_flags = []
         save_analysis(video_hash, Profile())
         with connection.cursor() as cursor:
-            cursor.execute('SELECT is_safe, risk_flags FROM analysis WHERE video_hash = %s',
-                           (video_hash,))
+            cursor.execute('SELECT is_safe, risk_flags FROM analysis WHERE video_hash = %s', (video_hash,))
             rows = cursor.fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual(int(rows[0][0]), 1)
         self.assertEqual(json.loads(rows[0][1]), [])
 
-
 class StreamTests(TestCase):
+
     def setUp(self):
         self.raw = clip_bytes('calm', frames=6)
         if self.raw is None:
@@ -493,26 +417,20 @@ class StreamTests(TestCase):
         self.assertEqual(response.content, self.raw)
 
     def test_range_request_returns_206(self):
-        response = self.client.get(f'/stream/{self.video_hash}/',
-                                   HTTP_RANGE='bytes=0-99')
+        response = self.client.get(f'/stream/{self.video_hash}/', HTTP_RANGE='bytes=0-99')
         self.assertEqual(response.status_code, 206)
         self.assertEqual(response['Content-Range'], f'bytes 0-99/{len(self.raw)}')
         self.assertEqual(response.content, self.raw[:100])
 
     def test_unsatisfiable_range_returns_416(self):
-        response = self.client.get(f'/stream/{self.video_hash}/',
-                                   HTTP_RANGE=f'bytes={len(self.raw) + 10}-')
+        response = self.client.get(f'/stream/{self.video_hash}/', HTTP_RANGE=f'bytes={len(self.raw) + 10}-')
         self.assertEqual(response.status_code, 416)
 
     def test_missing_video_is_404(self):
         self.assertEqual(self.client.get('/stream/123456/').status_code, 404)
 
-
-# --------------------------------------------------------------------------
-# demonstration storefront
-# --------------------------------------------------------------------------
-
 class StoreTests(TestCase):
+
     def test_every_demo_pack_has_two_distinct_local_previews(self):
         products = StoreProduct.objects.filter(active=True)
         self.assertEqual(products.count(), 4)
@@ -539,7 +457,7 @@ class StoreTests(TestCase):
     def test_prices_are_seeded_in_rupees(self):
         from epilepscreen.models import StoreProduct
         pack = StoreProduct.objects.get(title='Screening pack')
-        self.assertEqual(pack.price_paise, 49900)  # ₹499, stored in paise
+        self.assertEqual(pack.price_paise, 49900)
         page = self.client.get('/store/')
         self.assertContains(page, '₹499')
         self.assertNotContains(page, '$19')
@@ -566,7 +484,6 @@ class StoreTests(TestCase):
         self.assertEqual(purchase.amount_paise, product.price_paise)
         self.assertEqual(purchase.currency, 'INR')
         self.assertIsNotNone(purchase.completed_at)
-
         receipt = self.client.get('/order/')
         self.assertContains(receipt, 'Order recorded')
         self.assertContains(receipt, 'no payment taken')
@@ -576,11 +493,9 @@ class StoreTests(TestCase):
         """Two orders from one email accumulate in customer_spend."""
         from epilepscreen.models import CustomerSpend, StoreProduct
         product = StoreProduct.objects.get(title='Screening pack')
-
         for _ in range(2):
             self.client.post(f'/cart/add/{product.pk}/')
             self.client.post('/checkout/', {'email': 'spender@example.com'})
-
         spend = CustomerSpend.objects.get(email='spender@example.com')
         self.assertEqual(spend.order_count, 2)
         self.assertEqual(spend.total_paise, product.price_paise * 2)
@@ -593,16 +508,12 @@ class StoreTests(TestCase):
         from epilepscreen.models import CustomerSpend, StoreProduct
         cheap = StoreProduct.objects.get(title='Screening pack')
         dear = StoreProduct.objects.get(title='Premium shelf')
-
         self.client.post(f'/cart/add/{cheap.pk}/')
         self.client.post('/checkout/', {'email': 'a@example.com'})
         self.client.post(f'/cart/add/{dear.pk}/')
         self.client.post('/checkout/', {'email': 'b@example.com'})
-
-        self.assertEqual(CustomerSpend.objects.get(email='a@example.com').total_paise,
-                         cheap.price_paise)
-        self.assertEqual(CustomerSpend.objects.get(email='b@example.com').total_paise,
-                         dear.price_paise)
+        self.assertEqual(CustomerSpend.objects.get(email='a@example.com').total_paise, cheap.price_paise)
+        self.assertEqual(CustomerSpend.objects.get(email='b@example.com').total_paise, dear.price_paise)
 
     def test_receipt_shows_the_stored_total_for_that_email(self):
         from epilepscreen.models import StoreProduct
@@ -610,7 +521,6 @@ class StoreTests(TestCase):
         for _ in range(3):
             self.client.post(f'/cart/add/{product.pk}/')
             self.client.post('/checkout/', {'email': 'repeat@example.com'})
-
         receipt = self.client.get('/order/')
         self.assertEqual(receipt.context['spend_total'], '₹1,497')
         self.assertEqual(receipt.context['spend_orders'], 3)
@@ -645,8 +555,8 @@ class StoreTests(TestCase):
         self.client.post(f'/cart/remove/{product.pk}/')
         self.assertEqual(self.client.get('/checkout/').context['item_count'], 0)
 
-
 class MoneyTests(TestCase):
+
     def test_format_paise(self):
         from epilepscreen.money import format_paise
         self.assertEqual(format_paise(49900), '₹499')
@@ -673,15 +583,15 @@ class MoneyTests(TestCase):
             with self.assertRaises(ValueError):
                 rupees_to_paise(junk)
 
-
 class HealthTests(TestCase):
+
     def test_health_reports_the_engine(self):
         payload = self.client.get('/health/').json()
         self.assertEqual(payload['status'], 'ok')
         self.assertIn(payload['engine'], ('sqlite', 'mysql'))
 
-
 class AdminTests(TestCase):
+
     def setUp(self):
         from django.contrib.auth.models import User
         self.user = User.objects.create_superuser('teacher', 't@example.com', 'pw-for-tests')
@@ -690,12 +600,7 @@ class AdminTests(TestCase):
     def test_admin_lists_the_screening_tables(self):
         video_hash = store_video(b'admin-bytes', title='Admin clip')
         save_analysis(video_hash, type('P', (), {'is_safe': True, 'risk_flags': []})())
-        for url in ('/admin/epilepscreen/videorecord/',
-                    '/admin/epilepscreen/hazardevent/',
-                    '/admin/epilepscreen/analysis/',
-                    '/admin/epilepscreen/storeproduct/'):
+        for url in ('/admin/epilepscreen/videorecord/', '/admin/epilepscreen/hazardevent/', '/admin/epilepscreen/analysis/', '/admin/epilepscreen/storeproduct/'):
             response = self.client.get(url)
             self.assertEqual(response.status_code, 200, url)
-        self.assertContains(self.client.get('/admin/epilepscreen/videorecord/'),
-                            'Admin clip')
-
+        self.assertContains(self.client.get('/admin/epilepscreen/videorecord/'), 'Admin clip')

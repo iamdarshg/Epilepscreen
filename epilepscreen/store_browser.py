@@ -17,51 +17,24 @@ import mimetypes
 import os
 import re
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlparse
-
 import requests
 from bs4 import BeautifulSoup
 from django.db import DatabaseError, IntegrityError, connection
 from django.urls import reverse
-
 MAX_PAGE_BYTES = 4 * 1024 * 1024
 MAX_ASSET_BYTES = 8 * 1024 * 1024
 MAX_VIDEO_BYTES = 100 * 1024 * 1024
-
-USER_AGENT = (
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-    'AppleWebKit/537.36 (KHTML, like Gecko) '
-    'Chrome/124.0 Safari/537.36 EpilepscreenStore/1.0'
-)
-
-# Only the sources the store names, and their own subdomains, are reachable
-# from the capture browser. This keeps the proxy from becoming an open door.
-ALLOWED_SUFFIXES = (
-    'archive.org',
-    'cdc.gov',
-    'medlineplus.gov',
-    'nih.gov',
-    'pexels.com',
-    'pixabay.com',
-)
-
-VIDEO_EXTENSIONS = {
-    '.3gp', '.avi', '.flv', '.m4v', '.mkv', '.mov', '.mp4', '.ogv', '.webm',
-}
-
-REMOVE_TAGS = (
-    'applet', 'base', 'blink', 'canvas', 'dialog', 'embed', 'frame',
-    'frameset', 'iframe', 'link', 'marquee', 'meta', 'noscript', 'object',
-    'script', 'style', 'template',
-)
-
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 EpilepscreenStore/1.0'
+ALLOWED_SUFFIXES = ('archive.org', 'cdc.gov', 'medlineplus.gov', 'nih.gov', 'pexels.com', 'pixabay.com')
+VIDEO_EXTENSIONS = {'.3gp', '.avi', '.flv', '.m4v', '.mkv', '.mov', '.mp4', '.ogv', '.webm'}
+REMOVE_TAGS = ('applet', 'base', 'blink', 'canvas', 'dialog', 'embed', 'frame', 'frameset', 'iframe', 'link', 'marquee', 'meta', 'noscript', 'object', 'script', 'style', 'template')
 
 class BrowserError(Exception):
     """A source page could not be shown or a file could not be captured."""
 
-
 def is_allowed_url(url):
     """True for http(s) URLs on one of the named sources or their subdomains."""
-    if not url or any(ch.isspace() for ch in url):
+    if not url or any((ch.isspace() for ch in url)):
         return False
     parsed = urlparse(url)
     if parsed.scheme not in ('http', 'https'):
@@ -73,38 +46,24 @@ def is_allowed_url(url):
     host = (parsed.hostname or '').lower().rstrip('.')
     if not host:
         return False
-    return any(host == suffix or host.endswith('.' + suffix)
-               for suffix in ALLOWED_SUFFIXES)
-
+    return any((host == suffix or host.endswith('.' + suffix) for suffix in ALLOWED_SUFFIXES))
 
 def _session():
     session = requests.Session()
-    session.headers.update({
-        'User-Agent': USER_AGENT,
-        'Accept-Language': 'en',
-    })
+    session.headers.update({'User-Agent': USER_AGENT, 'Accept-Language': 'en'})
     return session
-
 
 def _open(url, accept):
     """GET `url`, following redirects only while they stay on allowed hosts."""
     if not is_allowed_url(url):
         raise BrowserError('That address is outside the capture browser sources.')
-
     session = _session()
     current = url
     for _ in range(6):
         try:
-            response = session.get(
-                current,
-                headers={'Accept': accept},
-                stream=True,
-                timeout=(10, 60),
-                allow_redirects=False,
-            )
+            response = session.get(current, headers={'Accept': accept}, stream=True, timeout=(10, 60), allow_redirects=False)
         except requests.RequestException as exc:
             raise BrowserError('The source did not answer. Try another link.') from exc
-
         if response.is_redirect:
             location = response.headers.get('Location')
             response.close()
@@ -114,15 +73,12 @@ def _open(url, accept):
             if not is_allowed_url(current):
                 raise BrowserError('The source redirected outside the capture browser.')
             continue
-
         if response.status_code >= 400:
             status = response.status_code
             response.close()
             raise BrowserError(f'The source answered {status}.')
-        return response, current
-
+        return (response, current)
     raise BrowserError('The source redirected too many times.')
-
 
 def _read_limited(response, limit, too_big):
     data = bytearray()
@@ -137,21 +93,18 @@ def _read_limited(response, limit, too_big):
         raise BrowserError('The download stopped before it finished.') from exc
     return bytes(data)
 
-
 def content_type_of(response):
     return (response.headers.get('Content-Type') or '').split(';')[0].strip().lower()
 
-
 def _filename_for(response, url):
     disposition = response.headers.get('Content-Disposition') or ''
-    match = re.search(
-        r"filename\*\s*=\s*(?:UTF-8'')?([^;]+)", disposition, re.IGNORECASE)
+    match = re.search("filename\\*\\s*=\\s*(?:UTF-8'')?([^;]+)", disposition, re.IGNORECASE)
     if not match:
-        match = re.search(r'filename\s*=\s*"?([^";]+)"?', disposition, re.IGNORECASE)
+        match = re.search('filename\\s*=\\s*"?([^";]+)"?', disposition, re.IGNORECASE)
     name = unquote(match.group(1).strip().strip('"')) if match else ''
     if not name:
         name = os.path.basename(unquote(urlparse(url).path)) or 'captured-video'
-    name = re.sub(r'[^\w.\- ]+', '_', name).strip()[:180]
+    name = re.sub('[^\\w.\\- ]+', '_', name).strip()[:180]
     if not name:
         name = 'captured-video'
     if not os.path.splitext(name)[1]:
@@ -160,7 +113,6 @@ def _filename_for(response, url):
             name += guessed
     return name
 
-
 def _is_video(response, url, filename):
     content_type = content_type_of(response)
     if content_type.startswith('video/'):
@@ -168,27 +120,21 @@ def _is_video(response, url, filename):
     extension = os.path.splitext(filename or urlparse(url).path)[1].lower()
     if extension not in VIDEO_EXTENSIONS:
         return False
-    return content_type in (
-        '', 'application/octet-stream', 'binary/octet-stream', 'application/mp4',
-    )
-
+    return content_type in ('', 'application/octet-stream', 'binary/octet-stream', 'application/mp4')
 
 def page_url(target, back):
     return f"{reverse('browser_page')}?{urlencode({'url': target, 'back': back})}"
 
-
 def asset_url(target):
     return f"{reverse('browser_asset')}?{urlencode({'url': target})}"
 
-
 def _local_back(value):
     """A back target that may be a local path or an allowed source URL."""
-    if value.startswith('/') and not value.startswith('//'):
+    if value.startswith('/') and (not value.startswith('//')):
         return value
     if is_allowed_url(value):
         return page_url(value, reverse('store') + '#sources')
     return reverse('store') + '#sources'
-
 
 def _first_srcset(value):
     for candidate in (value or '').split(','):
@@ -197,8 +143,8 @@ def _first_srcset(value):
             return candidate.split()[0]
     return ''
 
-
 def _rewrite_css(text, base_url):
+
     def replace(match):
         target = match.group(2).strip()
         if target.startswith(('data:', '#', 'about:')):
@@ -207,15 +153,9 @@ def _rewrite_css(text, base_url):
         if not is_allowed_url(absolute):
             return 'url("")'
         return f'url("{asset_url(absolute)}")'
-
-    text = re.sub(
-        r'url\(\s*([\'"]?)([^)\'"]+)\1\s*\)', replace, text, flags=re.IGNORECASE)
-    text = re.sub(
-        r'@import\s+(?:url\()?[\'"]([^\'"]+)[\'"]\)?',
-        lambda m: f'@import "{asset_url(urljoin(base_url, m.group(1)))}"',
-        text, flags=re.IGNORECASE)
+    text = re.sub('url\\(\\s*([\\\'"]?)([^)\\\'"]+)\\1\\s*\\)', replace, text, flags=re.IGNORECASE)
+    text = re.sub('@import\\s+(?:url\\()?[\\\'"]([^\\\'"]+)[\\\'"]\\)?', lambda m: f'@import "{asset_url(urljoin(base_url, m.group(1)))}"', text, flags=re.IGNORECASE)
     return text
-
 
 def rewrite_page(data, base_url, charset=None):
     """Return (title, body_html) for a source page, safe to put in the shell."""
@@ -223,19 +163,13 @@ def rewrite_page(data, base_url, charset=None):
     title_tag = soup.find('title')
     title = title_tag.get_text(' ', strip=True) if title_tag else ''
     body = soup.body or soup
-
     for tag in body.find_all(REMOVE_TAGS):
         tag.decompose()
-
     for tag in body.find_all(True):
         for attribute in list(tag.attrs):
             name = attribute.lower()
-            if name.startswith('on') or name in {
-                'background', 'class', 'crossorigin', 'integrity', 'nonce',
-                'ping', 'srcdoc', 'style',
-            }:
+            if name.startswith('on') or name in {'background', 'class', 'crossorigin', 'integrity', 'nonce', 'ping', 'srcdoc', 'style'}:
                 del tag.attrs[attribute]
-
     for anchor in body.find_all('a', href=True):
         href = (anchor.get('href') or '').strip()
         if not href or href.startswith('#'):
@@ -251,10 +185,8 @@ def rewrite_page(data, base_url, charset=None):
         else:
             del anchor['href']
             anchor['title'] = 'External link left out of the capture browser'
-
     for image in body.find_all('img'):
-        src = (image.get('data-src') or image.get('data-original')
-               or image.get('src') or '')
+        src = image.get('data-src') or image.get('data-original') or image.get('src') or ''
         if not src:
             src = _first_srcset(image.get('data-srcset') or image.get('srcset'))
         if src.startswith('data:'):
@@ -269,14 +201,12 @@ def rewrite_page(data, base_url, charset=None):
         image['loading'] = 'lazy'
         if not image.get('alt'):
             image['alt'] = ''
-
     for source in body.find_all('source'):
         src = source.get('src') or _first_srcset(source.get('srcset'))
         if src:
             source['src'] = asset_url(urljoin(base_url, src))
         for attribute in ('srcset', 'sizes'):
             source.attrs.pop(attribute, None)
-
     for video in body.find_all('video'):
         source = video.get('src')
         if not source:
@@ -291,10 +221,8 @@ def rewrite_page(data, base_url, charset=None):
         link.string = 'Save this video to the library'
         paragraph.append(link)
         video.replace_with(paragraph)
-
     for media in body.find_all('audio'):
         media.decompose()
-
     for form in body.find_all('form'):
         action = urljoin(base_url, form.get('action') or base_url)
         if not is_allowed_url(action):
@@ -306,42 +234,31 @@ def rewrite_page(data, base_url, charset=None):
         hidden_back = soup.new_tag('input', type='hidden', name='back', value=base_url)
         form.insert(0, hidden_url)
         form.insert(1, hidden_back)
-
     for tag in body.find_all(['button', 'input']):
         tag.attrs.pop('formaction', None)
-
-    parts = ''.join(str(child) for child in body.contents)
-    return title, parts
-
+    parts = ''.join((str(child) for child in body.contents))
+    return (title, parts)
 
 def fetch_page(url):
     """Return (title, body_html, final_url) for an HTML source page."""
-    response, final_url = _open(
-        url, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5')
+    response, final_url = _open(url, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5')
     try:
         content_type = content_type_of(response)
         filename = _filename_for(response, final_url)
         if _is_video(response, final_url, filename):
-            data = _read_limited(
-                response, MAX_VIDEO_BYTES,
-                'That video is larger than the 100 MB capture limit.')
+            data = _read_limited(response, MAX_VIDEO_BYTES, 'That video is larger than the 100 MB capture limit.')
             return capture_video(response, final_url, filename, data)
-        if content_type and content_type not in (
-                'text/html', 'application/xhtml+xml', 'text/plain'):
-            raise BrowserError(
-                'That link is not a page or a video, so the browser left it alone.')
-        data = _read_limited(
-            response, MAX_PAGE_BYTES,
-            'That page is too large for the capture browser.')
+        if content_type and content_type not in ('text/html', 'application/xhtml+xml', 'text/plain'):
+            raise BrowserError('That link is not a page or a video, so the browser left it alone.')
+        data = _read_limited(response, MAX_PAGE_BYTES, 'That page is too large for the capture browser.')
         charset = None
         header = response.headers.get('Content-Type') or ''
         if 'charset=' in header.lower():
             charset = response.encoding
         title, body_html = rewrite_page(data, final_url, charset)
-        return title, body_html, final_url
+        return (title, body_html, final_url)
     finally:
         response.close()
-
 
 def capture_video(response, url, filename, data):
     """Store a downloaded video in the library. Returns result metadata."""
@@ -349,34 +266,20 @@ def capture_video(response, url, filename, data):
     content_type = content_type_of(response) or 'video/mp4'
     video_hash = int(hashlib.sha256(data).hexdigest()[:15], 16)
     now = datetime.datetime.now()
-
     saved = True
     try:
         with connection.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO epilepsy (hash, time_uploaded, title, category, content_type, movie) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (video_hash, now, title, 'Other', content_type, lzma.compress(data)),
-            )
+            cursor.execute('INSERT INTO epilepsy (hash, time_uploaded, title, category, content_type, movie) VALUES (%s, %s, %s, %s, %s, %s)', (video_hash, now, title, 'Other', content_type, lzma.compress(data)))
     except IntegrityError:
         saved = False
         with connection.cursor() as cursor:
-            cursor.execute("SELECT title FROM epilepsy WHERE hash = %s", (video_hash,))
+            cursor.execute('SELECT title FROM epilepsy WHERE hash = %s', (video_hash,))
             row = cursor.fetchone()
             if row and row[0]:
                 title = row[0]
     except DatabaseError as exc:
         raise BrowserError('The library could not record that file.') from exc
-
-    return {
-        'mode': 'captured',
-        'title': title,
-        'saved': saved,
-        'content_type': content_type,
-        'bytes': len(data),
-        'final_url': url,
-    }
-
+    return {'mode': 'captured', 'title': title, 'saved': saved, 'content_type': content_type, 'bytes': len(data), 'final_url': url}
 
 def fetch_asset(url):
     """Return (bytes, content_type) for an image, font or stylesheet."""
@@ -384,27 +287,17 @@ def fetch_asset(url):
     try:
         content_type = content_type_of(response)
         if content_type == 'text/css':
-            data = _read_limited(
-                response, MAX_ASSET_BYTES, 'That stylesheet is too large.')
+            data = _read_limited(response, MAX_ASSET_BYTES, 'That stylesheet is too large.')
             charset = response.encoding or 'utf-8'
             text = data.decode(charset, errors='replace')
-            return _rewrite_css(text, final_url).encode('utf-8'), 'text/css; charset=utf-8'
-        if (content_type.startswith('image/') or content_type.startswith('font/')
-                or content_type in ('application/font-woff', 'application/vnd.ms-fontobject')):
-            data = _read_limited(
-                response, MAX_ASSET_BYTES, 'That asset is too large.')
-            return data, content_type
+            return (_rewrite_css(text, final_url).encode('utf-8'), 'text/css; charset=utf-8')
+        if content_type.startswith('image/') or content_type.startswith('font/') or content_type in ('application/font-woff', 'application/vnd.ms-fontobject'):
+            data = _read_limited(response, MAX_ASSET_BYTES, 'That asset is too large.')
+            return (data, content_type)
         raise BrowserError('That asset type is not proxied.')
     finally:
         response.close()
 
-
 def browser_context(source, target_url=None, back=None):
     """Shared data for the capture-browser shell."""
-    return {
-        'source_name': source['name'],
-        'source_url': source['url'],
-        'display_url': target_url or source['url'],
-        'back_href': _local_back(back or ''),
-    }
-
+    return {'source_name': source['name'], 'source_url': source['url'], 'display_url': target_url or source['url'], 'back_href': _local_back(back or '')}

@@ -2,35 +2,11 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 
-
-
 class Video(models.Model):
     """Extended video format with comprehensive metadata for epilepsy screening"""
-    
-    VIDEO_FORMATS = [
-        ('SD', 'Standard Definition'),
-        ('HD', 'High Definition'),
-        ('4K', 'Ultra HD'),
-        ('RAW', 'Raw/Uncompressed'),
-        ('HDR', 'High Dynamic Range'),
-        ('Dolby', 'Dolby Vision/ATMOS'),
-    ]
-    
-    VIDEO_TYPES = [
-        ('monitoring', 'Epilepsy Monitoring'),
-        ('research', 'Research'),
-        ('clinical', 'Clinical Trial'),
-        ('educational', 'Educational'),
-        ('demonstration', 'Demonstration'),
-    ]
-    
-    SAFETY_RATINGS = [
-        ('safe', 'Safe'),
-        ('warning', 'Warning'),
-        ('caution', 'Caution'),
-        ('avoid', 'Avoid'),
-    ]
-    
+    VIDEO_FORMATS = [('SD', 'Standard Definition'), ('HD', 'High Definition'), ('4K', 'Ultra HD'), ('RAW', 'Raw/Uncompressed'), ('HDR', 'High Dynamic Range'), ('Dolby', 'Dolby Vision/ATMOS')]
+    VIDEO_TYPES = [('monitoring', 'Epilepsy Monitoring'), ('research', 'Research'), ('clinical', 'Clinical Trial'), ('educational', 'Educational'), ('demonstration', 'Demonstration')]
+    SAFETY_RATINGS = [('safe', 'Safe'), ('warning', 'Warning'), ('caution', 'Caution'), ('avoid', 'Avoid')]
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     url = models.URLField(max_length=2000)
@@ -39,8 +15,6 @@ class Video(models.Model):
     thumbnail = models.URLField(max_length=2000, blank=True)
     category = models.CharField(max_length=100, blank=True)
     content_type = models.CharField(max_length=50, blank=True)
-    
-    # Video format fields
     video_format = models.CharField(max_length=20, choices=VIDEO_FORMATS, default='HD')
     resolution = models.CharField(max_length=20, blank=True)
     framerate = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(120)])
@@ -49,41 +23,21 @@ class Video(models.Model):
     hdr_enabled = models.BooleanField(default=False)
     dolby_atmos = models.BooleanField(default=False)
     aspect_ratio = models.CharField(max_length=10, choices=[('16:9', '16:9'), ('4:3', '4:3'), ('2.35:1', '2.35:1')], default='16:9')
-    
-    # Analysis data
     seizure_threshold = models.FloatField(null=True, blank=True)
     seizure_duration = models.IntegerField(null=True, blank=True)
     confidence_score = models.FloatField(null=True, blank=True)
     safety_rating = models.CharField(max_length=20, default='safe', choices=SAFETY_RATINGS)
-    
-    # Store functionality
     is_premium = models.BooleanField(default=False)
     price_paise = models.IntegerField(default=0)
-    
+
     class Meta:
         ordering = ['-created_at']
         db_table = 'videos'
-        indexes = [
-            models.Index(fields=['category'], name='video_category_idx'),
-            models.Index(fields=['is_premium'], name='video_premium_idx'),
-            models.Index(fields=['video_format'], name='video_format_idx'),
-            models.Index(fields=['safety_rating'], name='video_safety_idx'),
-            models.Index(fields=['category', 'is_premium'], name='video_cat_prem_idx'),
-            models.Index(fields=['category', 'video_format'], name='video_cat_fmt_idx'),
-        ]
-
-
+        indexes = [models.Index(fields=['category'], name='video_category_idx'), models.Index(fields=['is_premium'], name='video_premium_idx'), models.Index(fields=['video_format'], name='video_format_idx'), models.Index(fields=['safety_rating'], name='video_safety_idx'), models.Index(fields=['category', 'is_premium'], name='video_cat_prem_idx'), models.Index(fields=['category', 'video_format'], name='video_cat_fmt_idx')]
 
 class StoreProduct(models.Model):
     """Store product for selling video formats and bundles"""
-    
-    PRODUCT_TYPES = [
-        ('format', 'Format Bundle'),
-        ('category', 'Category Pack'),
-        ('premium', 'Premium Content'),
-        ('research', 'Research Package'),
-    ]
-    
+    PRODUCT_TYPES = [('format', 'Format Bundle'), ('category', 'Category Pack'), ('premium', 'Premium Content'), ('research', 'Research Package')]
     active = models.BooleanField(default=True)
     title = models.CharField(max_length=200)
     description = models.TextField()
@@ -92,28 +46,15 @@ class StoreProduct(models.Model):
     duration_seconds = models.IntegerField(default=0)
     thumbnail = models.URLField(max_length=2000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         ordering = ['price_paise']
         db_table = 'store_products'
-        indexes = [
-            models.Index(fields=['active', 'price_paise'], name='store_active_price_idx'),
-            models.Index(fields=['title'], name='store_title_idx'),
-            models.Index(fields=['product_type'], name='store_type_idx'),
-        ]
-
-
+        indexes = [models.Index(fields=['active', 'price_paise'], name='store_active_price_idx'), models.Index(fields=['title'], name='store_title_idx'), models.Index(fields=['product_type'], name='store_type_idx')]
 
 class Purchase(models.Model):
     """Track store purchases"""
-    
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('approved', 'Approved'),
-        ('completed', 'Completed'),
-        ('failed', 'Failed'),
-    ]
-    
+    STATUS_CHOICES = [('pending', 'Pending'), ('approved', 'Approved'), ('completed', 'Completed'), ('failed', 'Failed')]
     product = models.ForeignKey(StoreProduct, on_delete=models.CASCADE, related_name='purchases')
     email = models.EmailField()
     payment_method = models.CharField(max_length=30, default='card')
@@ -123,49 +64,36 @@ class Purchase(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     amount_paise = models.IntegerField(null=True, blank=True)
     currency = models.CharField(max_length=3, default='INR')
-    
+
     class Meta:
         ordering = ['-created_at']
         db_table = 'purchases'
-        indexes = [
-            models.Index(fields=['email'], name='purchase_email_idx'),
-            models.Index(fields=['status'], name='purchase_status_idx'),
-            models.Index(fields=['product'], name='purchase_product_idx'),
-            models.Index(fields=['completed_at'], name='purchase_completed_idx'),
-        ]
-
-
+        indexes = [models.Index(fields=['email'], name='purchase_email_idx'), models.Index(fields=['status'], name='purchase_status_idx'), models.Index(fields=['product'], name='purchase_product_idx'), models.Index(fields=['completed_at'], name='purchase_completed_idx')]
 
 class VideoFormat(models.Model):
     """Pre-defined video format specifications"""
-    
     name = models.CharField(max_length=50, unique=True)
     resolution = models.CharField(max_length=20)
-    framerate_ranges = models.TextField(help_text="e.g., 24-60fps")
+    framerate_ranges = models.TextField(help_text='e.g., 24-60fps')
     codec_recommendations = models.TextField()
     bitrate_min = models.IntegerField()
     bitrate_max = models.IntegerField()
     description = models.TextField()
-    
+
     class Meta:
         ordering = ['name']
         db_table = 'video_formats'
 
-
-
 class VideoPurchase(models.Model):
     """Purchase history for individual videos"""
-    
     VIDEO = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='video_purchases')
     PURCHASED_BY = models.CharField(max_length=255)
     PURCHASED_AT = models.DateTimeField(auto_now_add=True)
     price_paise = models.IntegerField(null=True, blank=True)
     currency = models.CharField(max_length=3, default='INR')
-    
+
     class Meta:
         db_table = 'video_purchases'
-
-
 
 class StoreSubscription(models.Model):
     """Premium subscription for store access"""
@@ -175,19 +103,13 @@ class StoreSubscription(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     renewed_at = models.DateTimeField(null=True, blank=True)
-    
+
     class Meta:
         db_table = 'store_subscriptions'
-        indexes = [
-            models.Index(fields=['status'], name='subscription_status_idx'),
-            models.Index(fields=['expires_at'], name='subscription_expires_idx'),
-        ]
-
-
+        indexes = [models.Index(fields=['status'], name='subscription_status_idx'), models.Index(fields=['expires_at'], name='subscription_expires_idx')]
 
 class VideoCategory(models.Model):
     """Video categories for better organization"""
-    
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
     description = models.TextField(blank=True)
@@ -197,16 +119,11 @@ class VideoCategory(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['ordering', 'name']
         db_table = 'video_categories'
-        indexes = [
-            models.Index(fields=['slug'], name='category_slug_idx'),
-            models.Index(fields=['is_active'], name='category_active_idx'),
-        ]
-
-
+        indexes = [models.Index(fields=['slug'], name='category_slug_idx'), models.Index(fields=['is_active'], name='category_active_idx')]
 
 class CustomerSpend(models.Model):
     """How much each email address has spent in the demonstration store.
@@ -216,7 +133,6 @@ class CustomerSpend(models.Model):
     stored in paise (integer) — never a float — and rendered as ₹ by
     `epilepscreen.money.format_paise`.
     """
-
     email = models.EmailField(primary_key=True)
     total_paise = models.IntegerField(default=0)
     order_count = models.IntegerField(default=0)
@@ -229,10 +145,7 @@ class CustomerSpend(models.Model):
         db_table = 'customer_spend'
         verbose_name = 'Customer spend'
         verbose_name_plural = 'Customer spend'
-        indexes = [
-            models.Index(fields=['-total_paise'], name='spend_total_idx'),
-            models.Index(fields=['last_order_at'], name='spend_last_idx'),
-        ]
+        indexes = [models.Index(fields=['-total_paise'], name='spend_total_idx'), models.Index(fields=['last_order_at'], name='spend_last_idx')]
 
     @property
     def total_display(self):
@@ -242,19 +155,8 @@ class CustomerSpend(models.Model):
     def __str__(self):
         return f'{self.email}: {self.total_display} across {self.order_count} order(s)'
 
-
-# --- Legacy SQL tables -----------------------------------------------------
-# These three tables predate the ORM part of the project: they hold the video
-# blobs and the analysis output. `epilepscreen/views.py` talks to them with
-# hand-written SQL, which keeps the SQL visible and easy to explain in a
-# practical exam. The models below exist so Django knows the schema:
-# migration 0003 creates the tables on both SQLite and MySQL, and
-# `managed = False` stops migrations from trying to recreate them.
-
-
 class VideoRecord(models.Model):
     """One uploaded media file. `movie` holds lzma-compressed bytes."""
-
     hash = models.BigIntegerField(primary_key=True)
     time_uploaded = models.DateTimeField()
     title = models.CharField(max_length=200)
@@ -271,20 +173,13 @@ class VideoRecord(models.Model):
     def __str__(self):
         return self.title or f'Video {self.hash}'
 
-
 class HazardEvent(models.Model):
     """A timestamped range where the Python analyser found a trigger.
 
     `video_hash` is a real foreign key to `epilepsy.hash`; deleting a video
     cascades to its events.
     """
-
-    video_hash = models.ForeignKey(
-        VideoRecord,
-        on_delete=models.CASCADE,
-        db_column='video_hash',
-        related_name='hazard_events',
-    )
+    video_hash = models.ForeignKey(VideoRecord, on_delete=models.CASCADE, db_column='video_hash', related_name='hazard_events')
     kind = models.CharField(max_length=40)
     start_time = models.FloatField()
     end_time = models.FloatField()
@@ -295,22 +190,13 @@ class HazardEvent(models.Model):
         managed = False
         db_table = 'hazard_event'
 
-
 class Analysis(models.Model):
     """One row per screened video: safe/unsafe plus the risk flags.
 
     `video_hash` is both the primary key and a foreign key to `epilepsy.hash`,
     so a video can have at most one verdict and deleting it removes the row.
     """
-
-    video_hash = models.OneToOneField(
-        VideoRecord,
-        on_delete=models.CASCADE,
-        db_column='video_hash',
-        primary_key=True,
-        related_name='analysis',
-        serialize=False,
-    )
+    video_hash = models.OneToOneField(VideoRecord, on_delete=models.CASCADE, db_column='video_hash', primary_key=True, related_name='analysis', serialize=False)
     is_safe = models.BooleanField()
     risk_flags = models.JSONField(default=list, blank=True)
     checked_at = models.DateTimeField()

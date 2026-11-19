@@ -9,74 +9,8 @@ JSON types. Everything uses CREATE TABLE IF NOT EXISTS, so a database that was
 already built by the old `sql.py` script simply keeps its tables.
 """
 from django.db import migrations
-
-
-SQLITE_DDL = [
-    """
-    CREATE TABLE IF NOT EXISTS epilepsy (
-        hash INTEGER PRIMARY KEY,
-        time_uploaded DATETIME NOT NULL,
-        title TEXT NOT NULL,
-        category VARCHAR(40),
-        content_type VARCHAR(60),
-        movie BLOB
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS hazard_event (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        video_hash INTEGER NOT NULL,
-        kind VARCHAR(40) NOT NULL,
-        start_time REAL NOT NULL,
-        end_time REAL NOT NULL,
-        attributes TEXT,
-        created_at DATETIME NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS analysis (
-        video_hash INTEGER PRIMARY KEY,
-        is_safe BOOL NOT NULL,
-        risk_flags TEXT,
-        checked_at DATETIME NOT NULL
-    )
-    """,
-    "CREATE INDEX IF NOT EXISTS idx_hazard_video ON hazard_event (video_hash)",
-]
-
-MYSQL_DDL = [
-    """
-    CREATE TABLE IF NOT EXISTS epilepsy (
-        hash BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-        time_uploaded DATETIME NOT NULL,
-        title TEXT NOT NULL,
-        category VARCHAR(40) NULL,
-        content_type VARCHAR(60) NULL,
-        movie LONGBLOB
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS hazard_event (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        video_hash BIGINT UNSIGNED NOT NULL,
-        kind VARCHAR(40) NOT NULL,
-        start_time FLOAT NOT NULL,
-        end_time FLOAT NOT NULL,
-        attributes JSON,
-        created_at DATETIME NOT NULL,
-        INDEX idx_video (video_hash)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS analysis (
-        video_hash BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-        is_safe BOOL NOT NULL,
-        risk_flags JSON,
-        checked_at DATETIME NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """,
-]
-
+SQLITE_DDL = ['\n    CREATE TABLE IF NOT EXISTS epilepsy (\n        hash INTEGER PRIMARY KEY,\n        time_uploaded DATETIME NOT NULL,\n        title TEXT NOT NULL,\n        category VARCHAR(40),\n        content_type VARCHAR(60),\n        movie BLOB\n    )\n    ', '\n    CREATE TABLE IF NOT EXISTS hazard_event (\n        id INTEGER PRIMARY KEY AUTOINCREMENT,\n        video_hash INTEGER NOT NULL,\n        kind VARCHAR(40) NOT NULL,\n        start_time REAL NOT NULL,\n        end_time REAL NOT NULL,\n        attributes TEXT,\n        created_at DATETIME NOT NULL\n    )\n    ', '\n    CREATE TABLE IF NOT EXISTS analysis (\n        video_hash INTEGER PRIMARY KEY,\n        is_safe BOOL NOT NULL,\n        risk_flags TEXT,\n        checked_at DATETIME NOT NULL\n    )\n    ', 'CREATE INDEX IF NOT EXISTS idx_hazard_video ON hazard_event (video_hash)']
+MYSQL_DDL = ['\n    CREATE TABLE IF NOT EXISTS epilepsy (\n        hash BIGINT UNSIGNED NOT NULL PRIMARY KEY,\n        time_uploaded DATETIME NOT NULL,\n        title TEXT NOT NULL,\n        category VARCHAR(40) NULL,\n        content_type VARCHAR(60) NULL,\n        movie LONGBLOB\n    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n    ', '\n    CREATE TABLE IF NOT EXISTS hazard_event (\n        id INT AUTO_INCREMENT PRIMARY KEY,\n        video_hash BIGINT UNSIGNED NOT NULL,\n        kind VARCHAR(40) NOT NULL,\n        start_time FLOAT NOT NULL,\n        end_time FLOAT NOT NULL,\n        attributes JSON,\n        created_at DATETIME NOT NULL,\n        INDEX idx_video (video_hash)\n    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n    ', '\n    CREATE TABLE IF NOT EXISTS analysis (\n        video_hash BIGINT UNSIGNED NOT NULL PRIMARY KEY,\n        is_safe BOOL NOT NULL,\n        risk_flags JSON,\n        checked_at DATETIME NOT NULL\n    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n    ']
 
 def create_tables(apps, schema_editor):
     statements = MYSQL_DDL if schema_editor.connection.vendor == 'mysql' else SQLITE_DDL
@@ -84,19 +18,11 @@ def create_tables(apps, schema_editor):
         for sql in statements:
             cursor.execute(sql)
 
-
 def drop_tables(apps, schema_editor):
     with schema_editor.connection.cursor() as cursor:
         for table in ('hazard_event', 'analysis', 'epilepsy'):
             cursor.execute(f'DROP TABLE IF EXISTS {table}')
 
-
 class Migration(migrations.Migration):
-
-    dependencies = [
-        ('epilepscreen', '0002_seed_store_products'),
-    ]
-
-    operations = [
-        migrations.RunPython(create_tables, drop_tables),
-    ]
+    dependencies = [('epilepscreen', '0002_seed_store_products')]
+    operations = [migrations.RunPython(create_tables, drop_tables)]

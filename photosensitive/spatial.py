@@ -1,13 +1,10 @@
 """Spatial (within-frame) photosensitive detectors. Pure-NumPy core."""
 import numpy as np
-
 from photosensitive.temporal import relative_luminance
-
 
 def luminance_map(rgb: np.ndarray) -> np.ndarray:
     """Per-pixel relative luminance of a frame (H, W, 3) -> (H, W)."""
     return relative_luminance(rgb)
-
 
 def spatial_pattern_score(lum: np.ndarray, contrast=None) -> float:
     """Score in [0, 1] of how much of the frame carries a high-contrast
@@ -22,15 +19,10 @@ def spatial_pattern_score(lum: np.ndarray, contrast=None) -> float:
     near 1 while flat or noisy frames score low.
     """
     from photosensitive.config import get
-
-    thr = float(get(None, "spatial_contrast")) if contrast is None else float(contrast)
+    thr = float(get(None, 'spatial_contrast')) if contrast is None else float(contrast)
     if lum.ndim != 2 or lum.shape[0] < 4 or lum.shape[1] < 8:
         return 0.0
-
-    # Sample a subset of scanlines for speed; stripes/checkerboards repeat, so
-    # a sample is representative.
-    rows = lum[:: max(1, lum.shape[0] // 24)]
-
+    rows = lum[::max(1, lum.shape[0] // 24)]
     total_pix = 0
     covered = 0
     for row in rows:
@@ -48,11 +40,9 @@ def spatial_pattern_score(lum: np.ndarray, contrast=None) -> float:
         ends = idx[1:][flip]
         if len(starts):
             covered += int((ends - starts).sum())
-
     if total_pix == 0:
         return 0.0
     return covered / total_pix
-
 
 def pattern_change(prev_lum: np.ndarray, curr_lum: np.ndarray) -> float:
     """Mean absolute difference between two luminance maps, in [0, 1].
