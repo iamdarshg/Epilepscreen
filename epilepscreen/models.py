@@ -268,11 +268,23 @@ class VideoRecord(models.Model):
         db_table = 'epilepsy'
         verbose_name = 'Video record'
 
+    def __str__(self):
+        return self.title or f'Video {self.hash}'
+
 
 class HazardEvent(models.Model):
-    """A timestamped range where the Python analyser found a trigger."""
+    """A timestamped range where the Python analyser found a trigger.
 
-    video_hash = models.BigIntegerField()
+    `video_hash` is a real foreign key to `epilepsy.hash`; deleting a video
+    cascades to its events.
+    """
+
+    video_hash = models.ForeignKey(
+        VideoRecord,
+        on_delete=models.CASCADE,
+        db_column='video_hash',
+        related_name='hazard_events',
+    )
     kind = models.CharField(max_length=40)
     start_time = models.FloatField()
     end_time = models.FloatField()
@@ -285,9 +297,20 @@ class HazardEvent(models.Model):
 
 
 class Analysis(models.Model):
-    """One row per screened video: safe/unsafe plus the risk flags."""
+    """One row per screened video: safe/unsafe plus the risk flags.
 
-    video_hash = models.BigIntegerField(primary_key=True)
+    `video_hash` is both the primary key and a foreign key to `epilepsy.hash`,
+    so a video can have at most one verdict and deleting it removes the row.
+    """
+
+    video_hash = models.OneToOneField(
+        VideoRecord,
+        on_delete=models.CASCADE,
+        db_column='video_hash',
+        primary_key=True,
+        related_name='analysis',
+        serialize=False,
+    )
     is_safe = models.BooleanField()
     risk_flags = models.JSONField(default=list, blank=True)
     checked_at = models.DateTimeField()

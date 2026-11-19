@@ -60,8 +60,9 @@ class VideoRecordAdmin(admin.ModelAdmin):
 class HazardEventAdmin(admin.ModelAdmin):
     list_display = ('video_hash', 'kind', 'start_time', 'end_time', 'created_at')
     list_filter = ('kind',)
-    search_fields = ('video_hash',)
-    ordering = ('video_hash', 'start_time')
+    list_select_related = ('video_hash',)
+    search_fields = ('video_hash__title', 'video_hash__hash', 'kind')
+    ordering = ('video_hash_id', 'start_time')
 
     def has_add_permission(self, request):
         return False
@@ -74,6 +75,8 @@ class HazardEventAdmin(admin.ModelAdmin):
 class AnalysisAdmin(admin.ModelAdmin):
     list_display = ('video_hash', 'is_safe', 'risk_flags', 'checked_at')
     list_filter = ('is_safe',)
+    list_select_related = ('video_hash',)
+    search_fields = ('video_hash__title', 'video_hash__hash')
     ordering = ('-checked_at',)
 
     def has_add_permission(self, request):

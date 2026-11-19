@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.staticfiles import finders
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.test import Client, TestCase
 from django.urls import reverse
 
@@ -436,6 +436,28 @@ class AnalysisStoreTests(TestCase):
             cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s',
                            (video_hash,))
             self.assertEqual(cursor.fetchone()[0], 1)
+
+    def test_events_cannot_name_a_missing_video(self):
+        with self.assertRaises(IntegrityError):
+            save_events(42, [HazardEvent('flicker', 0.0, 1.0, {})])
+
+    def test_deleting_a_video_cascades_to_events_and_analysis(self):
+        video_hash = store_video(b'cascade-bytes', title='z')
+
+        class Profile:
+            is_safe = True
+            risk_flags = []
+
+        save_events(video_hash, [HazardEvent('flicker', 0.0, 1.0, {})])
+        save_analysis(video_hash, Profile())
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM epilepsy WHERE hash = %s', (video_hash,))
+            cursor.execute('SELECT COUNT(*) FROM hazard_event WHERE video_hash = %s',
+                           (video_hash,))
+            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute('SELECT COUNT(*) FROM analysis WHERE video_hash = %s',
+                           (video_hash,))
+            self.assertEqual(cursor.fetchone()[0], 0)
 
     def test_save_analysis_keeps_one_row(self):
         video_hash = store_video(b'fake-bytes-2', title='y')

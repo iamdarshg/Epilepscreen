@@ -406,17 +406,18 @@ Ten models. Two groups.
 | `StoreSubscription` | `store_subscriptions` | Premium plan rows. Unused by the current UI. |
 | `VideoCategory` | `video_categories` | Hierarchical categories with slug/icon/ordering. Unused by the current UI; categories currently live as a text column on `epilepsy`. |
 
-**SQL-owned tables (`managed = False`, created by migration 0003):**
+**SQL-owned tables (`managed = False`, structure created by migration 0003):**
 
 | Model | Table | Fields |
 | --- | --- | --- |
 | `VideoRecord` | `epilepsy` | `hash` (PK), `time_uploaded`, `title`, `category`, `content_type`, `movie` (blob) |
-| `HazardEvent` | `hazard_event` | `video_hash`, `kind`, `start_time`, `end_time`, `attributes` (JSON), `created_at` |
-| `Analysis` | `analysis` | `video_hash` (PK), `is_safe`, `risk_flags` (JSON), `checked_at` |
+| `HazardEvent` | `hazard_event` | `video_hash` (FK → `epilepsy.hash`, cascade), `kind`, `start_time`, `end_time`, `attributes` (JSON), `created_at` |
+| `Analysis` | `analysis` | `video_hash` (PK + FK → `epilepsy.hash`, cascade), `is_safe`, `risk_flags` (JSON), `checked_at` |
 
-`managed = False` means migrations never issue DDL for them; they exist so the
-admin can list them, so `makemigrations --check` stays clean, and so the schema
-is documented in Python as well as in SQL.
+`managed = False` means ordinary field migrations never issue DDL for them; they
+exist so the admin can list them, so `makemigrations --check` stays clean, and so
+the schema is documented in Python as well as in SQL. The foreign keys are added
+by the raw `RunPython` step in migration `0007`.
 
 ### 3.10 `epilepscreen/migrations/`
 
@@ -427,6 +428,7 @@ is documented in Python as well as in SQL.
 | `0003_sql_tables.py` | `create_tables()` runs per-vendor `CREATE TABLE IF NOT EXISTS` DDL for `epilepsy`, `hazard_event`, `analysis` (and an index on `hazard_event.video_hash` for SQLite). `drop_tables()` reverses. |
 | `0004_analysis_hazardevent_videorecord.py` | `CreateModel` entries with `managed=False` — state only, no DDL. Keeps Django's model state in sync with `models.py`. |
 | `0005_inr_prices_and_customer_spend.py` | Renames `*_cents` to `*_paise` on `purchases`, `store_products`, `videos`, `video_purchases`; sets `currency` default to `INR`; re-prices the four packs (₹499 / ₹799 / ₹1,999 / ₹3,999); creates `customer_spend`; re-prices any old order line from its product and back-fills the totals from existing `purchases` with `GROUP BY email` + `SUM(amount_paise)`. Reversible: restores the old prices and empties the spend table. |
+| `0007_video_hash_foreign_keys.py` | Turns `hazard_event.video_hash` and `analysis.video_hash` into real foreign keys with `ON DELETE CASCADE`. MySQL runs two `ALTER TABLE ... ADD CONSTRAINT` statements; SQLite rebuilds both child tables because it cannot add a constraint in place. The `AlterField` state operations are state-only. Reversible. |
 
 ### 3.11 `epilepscreen/admin.py` (95 lines)
 
@@ -782,6 +784,19 @@ Why the two dialects: `BLOB` vs `LONGBLOB` (a ≥ 4 GB vs 64 KB blob), `REAL` vs
 uses `IF NOT EXISTS` so a database already built by the old `sql.py` is left
 untouched. `drop_tables()` reverses in child-first order.
 
+Migration `0007_video_hash_foreign_keys` adds the missing integrity constraints:
+
+```sql
+ALTER TABLE hazard_event ADD CONSTRAINT fk_hazard_event_video
+    FOREIGN KEY (video_hash) REFERENCES epilepsy (hash) ON DELETE CASCADE;
+ALTER TABLE analysis ADD CONSTRAINT fk_analysis_video
+    FOREIGN KEY (video_hash) REFERENCES epilepsy (hash) ON DELETE CASCADE;
+```
+
+MySQL runs those `ALTER TABLE` statements. SQLite cannot add a constraint to an
+existing table, so the migration rebuilds `hazard_event` and `analysis` with the
+same `FOREIGN KEY ... ON DELETE CASCADE` clauses and copies the rows across.
+
 The store tables are created by Django from the models, not by hand. The one that
 matters for the money path is `customer_spend` (migration `0005`); the SQL MySQL
 receives is:
@@ -904,9 +919,9 @@ DELETE FROM analysis     WHERE video_hash = %s;
 DELETE FROM epilepsy     WHERE hash       = %s;
 ```
 
-`delete_video`, inside one `transaction.atomic()` so a partial delete cannot
-leave orphan events. Child rows go first because there is no `ON DELETE CASCADE`
-on the hand-written tables.
+`delete_video`, inside one `transaction.atomic()`. Since migration `0007` both
+child tables also have `ON DELETE CASCADE`, so these explicit child deletes are
+belt-and-braces rather than the only protection against orphans.
 
 ### 4.3 `analysis` — one verdict per video
 
@@ -1151,7 +1166,7 @@ distinction drives the `unknown` / `safe` / `caution` / `risk` chips.
   `TransactionManagementError` under test).
 * `save_events` — `transaction.atomic()` around the delete + `executemany`.
 * `delete_video`, `clear_analysis` — `transaction.atomic()` around the child
-  deletes.
+  deletes (the foreign keys from migration `0007` also cascade).
 * `orders.create_demo_order` — `transaction.atomic()` around the purchase rows
   **and** the `customer_spend` update, so a failure part-way leaves neither a
   half order nor an inflated total.
