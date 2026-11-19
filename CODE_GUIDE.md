@@ -172,7 +172,7 @@ Standard Django entry point. `main()` sets `DJANGO_SETTINGS_MODULE=mysite.settin
 imports `execute_from_command_line`, and prints Django's own helpful message if
 Django is missing. Nothing project-specific.
 
-### 3.2 `sql.py` (37 lines)
+### 3.2 `sql.py` (33 lines)
 
 `main()` — sets the settings module, calls `django.setup()`, prints which engine
 `settings.DATABASES['default']['ENGINE']` resolved to, then
@@ -181,7 +181,7 @@ Django is missing. Nothing project-specific.
 Kept because older versions of the project created tables by running this file.
 It now delegates so there is exactly one schema definition (the migrations).
 
-### 3.3 `mysite/settings.py` (180 lines)
+### 3.3 `mysite/settings.py` (39 lines)
 
 | Block | Detail |
 | --- | --- |
@@ -202,27 +202,27 @@ It now delegates so there is exactly one schema definition (the migrations).
 Note there is no `DB_CONFIG` dict any more: the old `mysql.connector.connect(**DB_CONFIG)`
 path is gone, and everything goes through Django's connection.
 
-### 3.4 `mysite/urls.py` (23 lines)
+### 3.4 `mysite/urls.py` (19 lines)
 
 `""` → `include('epilepscreen.urls')`, `admin/` → `admin.site.urls`.
 Nothing else.
 
-### 3.5 `mysite/wsgi.py`, `mysite/asgi.py` (16 lines each)
+### 3.5 `mysite/wsgi.py`, `mysite/asgi.py` (12 lines each)
 
 Generated. `get_wsgi_application()` / `get_asgi_application()` with the settings
 module preset. Used by a real deployment server, not by `runserver`.
 
-### 3.6 `epilepscreen/apps.py` (6 lines)
+### 3.6 `epilepscreen/apps.py` (5 lines)
 
 `EpilepscreenConfig` — app name and `BigAutoField` default. Django boilerplate.
 
-### 3.7 `epilepscreen/urls.py` (34 lines)
+### 3.7 `epilepscreen/urls.py` (3 lines)
 
 The route table from §1.1. `path('', views.index, name='index')` etc. Note
 `upload/send/` is named `upload_send` (templates post to it) while the form page
 is `upload`.
 
-### 3.8 `epilepscreen/views.py` (1073 lines)
+### 3.8 `epilepscreen/views.py` (742 lines)
 
 The largest file: SQL layer, screening orchestration, every page view.
 
@@ -389,7 +389,7 @@ Django's connection.
   lines, the simulated total, the per-email total from `customer_spend`
   (`spend_total`, `spend_orders`) and the "no payment taken" note.
 
-### 3.9 `epilepscreen/models.py` (307 lines)
+### 3.9 `epilepscreen/models.py` (207 lines)
 
 Ten models. Two groups.
 
@@ -430,7 +430,7 @@ by the raw `RunPython` step in migration `0007`.
 | `0005_inr_prices_and_customer_spend.py` | Renames `*_cents` to `*_paise` on `purchases`, `store_products`, `videos`, `video_purchases`; sets `currency` default to `INR`; re-prices the four packs (₹499 / ₹799 / ₹1,999 / ₹3,999); creates `customer_spend`; re-prices any old order line from its product and back-fills the totals from existing `purchases` with `GROUP BY email` + `SUM(amount_paise)`. Reversible: restores the old prices and empties the spend table. |
 | `0007_video_hash_foreign_keys.py` | Turns `hazard_event.video_hash` and `analysis.video_hash` into real foreign keys with `ON DELETE CASCADE`. MySQL runs two `ALTER TABLE ... ADD CONSTRAINT` statements; SQLite rebuilds both child tables because it cannot add a constraint in place. The `AlterField` state operations are state-only. Reversible. |
 
-### 3.11 `epilepscreen/admin.py` (95 lines)
+### 3.11 `epilepscreen/admin.py` (76 lines)
 
 * `StoreProductAdmin` — list/filter/search the catalogue (price shown in paise).
 * `PurchaseAdmin` — list/filter/search orders (including `payment_method`, so
@@ -442,7 +442,7 @@ by the raw `RunPython` step in migration `0007`.
   `total_display` so the admin shows ₹ rather than raw paise. The table is
   written only by `orders.create_demo_order`.
 
-### 3.12 `epilepscreen/analysis_store.py` (59 lines)
+### 3.12 `epilepscreen/analysis_store.py` (64 lines)
 
 * `save_events(video_hash, events) -> int` — inside `transaction.atomic()`:
   `DELETE` the video's rows, then one `executemany` `INSERT` for the new events
@@ -454,7 +454,7 @@ by the raw `RunPython` step in migration `0007`.
   re-upload under a new hash or a manual reset. Exposed for maintenance; no view
   calls it today.
 
-### 3.13 `epilepscreen/money.py` (60 lines)
+### 3.13 `epilepscreen/money.py` (61 lines)
 
 The only place that turns stored integers into readable money. Prices are whole
 paise in the database (`49900` is ₹499) because binary floating point cannot
@@ -470,7 +470,7 @@ represent 0.1 exactly and a store must never round a total by accident.
   `ValueError` on anything else (`''`, `'abc'`, `'1.2.3'`, `'12.345'`). Used when
   a human types a price, so a hand-entered amount can never be stored as a float.
 
-### 3.14 `epilepscreen/orders.py` (127 lines)
+### 3.14 `epilepscreen/orders.py` (63 lines)
 
 Placing a demonstration order, and keeping the per-email total in step. The view
 calls one function; the rules live here so they can be tested without a browser.
@@ -492,7 +492,7 @@ calls one function; the rules live here so they can be tested without a browser.
   contacted and no card data exists in the call.
 * `spend_summary(limit=10)` — top spenders by total, for tooling and tests.
 
-### 3.15 `epilepscreen/media.py` (106 lines)
+### 3.15 `epilepscreen/media.py` (68 lines)
 
 Pure helpers, no database.
 
@@ -509,7 +509,7 @@ Pure helpers, no database.
   count; returns `{"duration_s", "width", "height"}` or `None` when the file has
   no readable video track. `None` is a normal answer, not an error.
 
-### 3.16 `epilepscreen/store_browser.py` (410 lines)
+### 3.16 `epilepscreen/store_browser.py` (303 lines)
 
 The server-side reader behind the store's sources panel.
 
@@ -546,7 +546,7 @@ The server-side reader behind the store's sources panel.
 * `browser_context(source, target_url, back)` — the shell's context
   (`source_name`, `source_url`, `display_url`, `back_href`).
 
-### 3.17 `epilepscreen/templatetags/epilepscreen_fmt.py` (61 lines)
+### 3.17 `epilepscreen/templatetags/epilepscreen_fmt.py` (39 lines)
 
 * `clock(seconds)` — `7.4 → "0:07.4"`, for hazard timestamps.
 * `kind_label(kind)` — event kind → label.
@@ -604,13 +604,13 @@ the detector without the web UI.
 
 ### 3.19 `photosensitive/` — the detector
 
-**`config.py` (27 lines)** — `DEFAULTS` dict: `flash_delta 40.0`, `flash_window
+**`config.py` (18 lines)** — `DEFAULTS` dict: `flash_delta 40.0`, `flash_window
 10`, `flash_limit 3`, `red_floor 0.25`, `red_window 15`, `color_threshold 0.4`,
 `spatial_contrast 0.3`, `spatial_threshold 0.15`, `pattern_move_threshold 0.1`.
 `get(cfg, key)` — override or default. Every consumer reads through it, which is
 why one request can re-tune the detector.
 
-**`temporal.py` (91 lines)**
+**`temporal.py` (88 lines)**
 
 * `relative_luminance(rgb)` — WCAG linearisation then
   `0.2126R + 0.7152G + 0.0722B`; returns an `(H, W)` float array in 0–1.
@@ -629,7 +629,7 @@ why one request can re-tune the detector.
 * `classify_color_transition(deltas, threshold)` — any delta ≥ threshold; again a
   whole-sequence boolean used by tests.
 
-**`spatial.py` (64 lines)**
+**`spatial.py` (54 lines)**
 
 * `luminance_map(rgb)` — alias of `relative_luminance`.
 * `spatial_pattern_score(lum, contrast=None)` — on up to 24 sampled rows, finds
@@ -639,7 +639,7 @@ why one request can re-tune the detector.
 * `pattern_change(prev_lum, curr_lum)` — mean absolute difference of two
   luminance maps.
 
-**`analyzer.py` (230 lines)**
+**`analyzer.py` (173 lines)**
 
 * `HazardEvent` dataclass — `kind`, `start_time`, `end_time`, `attributes`;
   `duration` property.
@@ -661,7 +661,7 @@ why one request can re-tune the detector.
     `duration_s`.
   * `_move_attrs(a, b)` — `speed`, `duration_s`.
 
-**`analyze_video.py` (106 lines)** — the only file that imports OpenCV, and it
+**`analyze_video.py` (158 lines)** — the only file that imports OpenCV, and it
 imports it inside functions so the rest of the package tests without a build.
 
 * `_source_fps(cap, fallback)` — container fps with guards (0, NaN, > 480).
@@ -679,7 +679,7 @@ imports it inside functions so the rest of the package tests without a build.
 
 | File | Covers |
 | --- | --- |
-| `epilepscreen/tests.py` (515 lines) | The real pipeline against a temporary database: home, browse search/category, six upload cases, screening + storage + timestamps, sensitivity parsing, detector integration, streaming (200/206/416/404), the rupee catalogue, the demo cart and checkout, the per-email total, health, admin. Helpers `_write_clip`, `_solid`, `clip_bytes(kind)`, `store_video(raw)`, `upload_file(raw)`. |
+| `epilepscreen/tests.py` (606 lines) | The real pipeline against a temporary database: home, browse search/category, six upload cases, screening + storage + timestamps, sensitivity parsing, detector integration, streaming (200/206/416/404), the rupee catalogue, the demo cart and checkout, the per-email total, health, admin. Helpers `_write_clip`, `_solid`, `clip_bytes(kind)`, `store_video(raw)`, `upload_file(raw)`. |
 | `epilepscreen/test_media.py` | Content types, category suggestion, `probe_media` on a generated clip. |
 | `epilepscreen/test_ingest.py` | File discovery, insert parameters, deterministic content hash, duplicate handling, size skip, auto category, missing file. |
 | `photosensitive/tests/test_luminance.py` | Black = 0, white = 1, green brighter than blue, map matches the function. |
